@@ -91,7 +91,7 @@ vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 
 -- [[ Setting options ]]
 -- See `:help vim.opt`
@@ -114,9 +114,9 @@ vim.opt.showmode = false
 --  Schedule the setting after `UiEnter` because it can increase startup-time.
 --  Remove this option if you want your OS clipboard to remain independent.
 --  See `:help 'clipboard'`
-vim.schedule(function()
-  vim.opt.clipboard = 'unnamedplus'
-end)
+-- vim.schedule(function()
+--   vim.opt.clipboard = 'unnamedplus'
+-- end)
 
 -- Enable break indent
 vim.opt.breakindent = true
@@ -170,6 +170,7 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+vim.keymap.set('n', '<leader>cd', vim.diagnostic.open_float, { desc = 'Hover [C]ode [D]iagnostic' })
 
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -615,6 +616,30 @@ require('lazy').setup({
               vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled { bufnr = event.buf })
             end, '[T]oggle Inlay [H]ints')
           end
+          -- The following code creates a keymap to toggle code lenses in your
+          -- code, if the language server you are using supports them
+          if client and client.supports_method(vim.lsp.protocol.Methods.textDocument_codeLens) then
+            local codelens_active = false
+            local create_codelens_autocmd = function()
+              vim.api.nvim_create_autocmd({ 'InsertLeave', 'BufEnter' }, {
+                group = vim.api.nvim_create_augroup('kickstart-lsp-codelens', { clear = false }),
+                callback = function()
+                  vim.lsp.codelens.refresh { bufnr = 0 }
+                end,
+              })
+            end
+            local toggle = function()
+              if codelens_active then
+                vim.lsp.codelens.clear()
+                vim.api.nvim_clear_autocmds { group = 'kickstart-lsp-codelens' }
+                codelens_active = false
+              else
+                create_codelens_autocmd()
+                codelens_active = true
+              end
+            end
+            map('<leader>tl', toggle, '[T]oggle Code [L]enses')
+          end
         end,
       })
 
@@ -675,7 +700,71 @@ require('lazy').setup({
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
         --
-
+        jdtls = {
+          cmd = {
+            'jdtls',
+            '-configuration',
+            vim.fn.expand '$HOME/.cache/jdtls/config',
+            '-data',
+            vim.fn.expand '$HOME/.cache/jdtls/workspace',
+            vim.fn.expand '--jvm-arg=-javaagent:$HOME/.local/share/nvim/mason/share/jdtls/lombok.jar',
+            '-Djava.import.generatesMetadataFilesAtProjectRoot=false',
+          },
+          init_options = {
+            settings = {
+              java = {
+                inlayHints = { parameterNames = { enabled = 'literals' } },
+                maven = { downloadSources = true },
+                references = { includeDecompiledSources = true },
+                saveActions = { organizeImports = true },
+                contentProvider = {
+                  preferred = 'fernflower',
+                },
+                signatureHelp = {
+                  enabled = true,
+                },
+                referencesCodeLens = {
+                  enabled = true,
+                },
+                import = {
+                  generatesMetadataFilesAtProjectRoot = false,
+                  gradle = { enabled = true, annotationProcessing = { enabled = true } },
+                  maven = { enabled = true },
+                },
+                implementationsCodeLens = {
+                  enabled = true,
+                },
+                jdt = {
+                  ls = {
+                    lombokSupport = {
+                      enabled = true,
+                    },
+                  },
+                },
+                -- import order options
+                completion = {
+                  importOrder = {
+                    'static',
+                    'de.c24',
+                    'de.check24',
+                    '',
+                    'java',
+                    'javax',
+                  },
+                },
+                -- C24 formatting options
+                -- TODO:  add null-ls or something to integrate checkstyle
+                format = {
+                  enabled = true,
+                  settings = {
+                    url = vim.fn.expand 'file://$HOME/c24_javastyle.xml',
+                    profile = 'c24-javastyle',
+                  },
+                },
+              },
+            },
+          },
+        },
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
@@ -948,6 +1037,11 @@ require('lazy').setup({
       },
       indent = { enable = true, disable = { 'ruby' } },
     },
+    config = function()
+      vim.opt.foldmethod = 'expr'
+      vim.opt.foldenable = false
+      vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
+    end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
     --
@@ -965,18 +1059,18 @@ require('lazy').setup({
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
-  -- require 'kickstart.plugins.debug',
+  require 'kickstart.plugins.debug',
   -- require 'kickstart.plugins.indent_line',
-  -- require 'kickstart.plugins.lint',
-  -- require 'kickstart.plugins.autopairs',
+  require 'kickstart.plugins.lint',
+  require 'kickstart.plugins.autopairs',
   -- require 'kickstart.plugins.neo-tree',
-  -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+  require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- { import = 'custom.plugins' },
+  { import = 'custom.plugins' },
   --
   -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
   -- Or use telescope!
