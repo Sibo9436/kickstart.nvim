@@ -8,7 +8,7 @@ local plugins = {
 }
 
 if vim.g.have_nerd_font then
-  table.insert(plugins, 'https://github.com/nvim-tree/nvim-web-devicons') -- not strictly required, but recommended
+  table.insert(plugins, 'https://github.com/nvim-tree/nvim-web-devicons')
 end
 
 vim.pack.add(plugins)
@@ -17,6 +17,11 @@ vim.keymap.set('n', '\\', '<Cmd>Neotree reveal<CR>', { desc = 'NeoTree reveal', 
 
 require('neo-tree').setup {
   filesystem = {
+    use_libuv_file_watcher = true,
+    group_empty_dirs = true,
+    buffers = {
+      group_empty_dirs = true,
+    },
     window = {
       mappings = {
         ['\\'] = 'close_window',

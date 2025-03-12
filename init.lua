@@ -99,7 +99,7 @@ do
   vim.g.maplocalleader = ' '
 
   -- Set to true if you have a Nerd Font installed and selected in the terminal
-  vim.g.have_nerd_font = false
+  vim.g.have_nerd_font = true
 
   -- [[ Setting options ]]
   --  See `:help vim.o`
@@ -181,29 +181,54 @@ do
 
   -- Diagnostic Config & Keymaps
   --  See `:help vim.diagnostic.Opts`
+  local virtual_text_config = {
+    source = 'if_many',
+    spacing = 2,
+    format = function(diagnostic)
+      local msgs = {
+        [vim.diagnostic.severity.ERROR] = diagnostic.message,
+        [vim.diagnostic.severity.WARN] = diagnostic.message,
+        [vim.diagnostic.severity.INFO] = diagnostic.message,
+        [vim.diagnostic.severity.HINT] = diagnostic.message,
+      }
+      return msgs[diagnostic.severity]
+    end,
+  }
+
   vim.diagnostic.config {
     update_in_insert = false,
     severity_sort = true,
     float = { border = 'rounded', source = 'if_many' },
-    underline = { severity = { min = vim.diagnostic.severity.WARN } },
-
-    -- Can switch between these as you prefer
-    virtual_text = true, -- Text shows up at the end of the line
-    virtual_lines = false, -- Text shows up underneath the line, with virtual lines
-
-    -- Auto open the float, so you can easily read the errors when jumping with `[d` and `]d`
+    underline = { severity = vim.diagnostic.severity.ERROR },
+    signs = vim.g.have_nerd_font and {
+      text = {
+        [vim.diagnostic.severity.ERROR] = '󰅚 ',
+        [vim.diagnostic.severity.WARN] = '󰀪 ',
+        [vim.diagnostic.severity.INFO] = '󰋽 ',
+        [vim.diagnostic.severity.HINT] = '󰌶 ',
+      },
+    } or {},
+    virtual_text = virtual_text_config,
+    virtual_lines = false,
     jump = {
       on_jump = function(_, bufnr)
-        vim.diagnostic.open_float {
-          bufnr = bufnr,
-          scope = 'cursor',
-          focus = false,
-        }
+        vim.diagnostic.open_float { bufnr = bufnr, scope = 'cursor', focus = false }
       end,
     },
   }
 
+  local vd_toggle = true
+  vim.keymap.set('n', '<leader>vd', function()
+    if vd_toggle then
+      vim.diagnostic.config { virtual_lines = { current_line = true } }
+    else
+      vim.diagnostic.config { virtual_lines = false }
+    end
+    vd_toggle = not vd_toggle
+  end, { desc = 'Virtual diagnostics' })
+
   vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+  vim.keymap.set('n', '<leader>cd', vim.diagnostic.open_float, { desc = 'Hover [C]ode [D]iagnostic' })
 
   -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
   -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -309,7 +334,7 @@ do
         vim.cmd 'TSUpdate'
         return
       end
-    end,
+    end
   })
 end
 
@@ -372,7 +397,7 @@ do
     spec = {
       { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
       { '<leader>t', group = '[T]oggle' },
-      { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
+      { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
       { 'gr', group = 'LSP Actions', mode = { 'n' } },
     },
   }
@@ -391,10 +416,15 @@ do
     },
   }
 
-  -- Load the colorscheme here.
-  -- Like many other themes, this one has different styles, and you could load
-  -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-  vim.cmd.colorscheme 'tokyonight-night'
+  vim.pack.add { gh 'catppuccin/nvim' }
+  vim.pack.add { gh 'zenbones-theme/zenbones.nvim', gh 'rktjmp/lush.nvim' }
+  vim.pack.add { gh 'rebelot/kanagawa.nvim' }
+  vim.api.nvim_create_autocmd('ColorScheme', {
+    group = vim.api.nvim_create_augroup('sibo-colo', { clear = true }),
+    pattern = { '*bones' },
+    callback = function() vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PmenuSel' }) end,
+  })
+  vim.cmd.colorscheme 'catppuccin-frappe'
 
   -- Highlight todo, notes, etc in comments
   vim.pack.add { gh 'folke/todo-comments.nvim' }
@@ -425,6 +455,7 @@ do
   -- - sd'   - [S]urround [D]elete [']quotes
   -- - sr)'  - [S]urround [R]eplace [)] [']
   require('mini.surround').setup()
+  require('mini.hipatterns').setup()
 
   -- Simple and easy statusline.
   --  You could remove this setup call if you don't like it,
@@ -507,10 +538,22 @@ do
   local builtin = require 'telescope.builtin'
   vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
   vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
-  vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
+  vim.keymap.set('n', '<leader>sf', function() builtin.find_files { path_display = { 'truncate' } } end, { desc = '[S]earch [F]iles' })
   vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
   vim.keymap.set({ 'n', 'v' }, '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
   vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
+  vim.keymap.set(
+    'n',
+    '<leader>s*',
+    function() builtin.live_grep { default_text = vim.fn.expand '<cword>' } end,
+    { desc = '[S]earch by grep word under cursor' }
+  )
+  vim.keymap.set(
+    'v',
+    '<leader>sg',
+    function() builtin.live_grep { default_text = table.concat(vim.fn.getregion(vim.fn.getpos 'v', vim.fn.getpos '.', { type = vim.fn.mode() }), '\\n') } end,
+    { desc = '[S]earch selected by [G]rep' }
+  )
   vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
   vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
   vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
@@ -630,6 +673,13 @@ do
         vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = 'LSP: ' .. desc })
       end
 
+      map('K', function() vim.lsp.buf.hover { border = 'rounded', wrap = true, max_width = math.floor(vim.fn.winwidth(0) / 2) } end, 'Hover')
+      vim.api.nvim_set_hl(0, 'NormalFloat', { link = 'FloatBorder' })
+      vim.api.nvim_create_autocmd('ColorScheme', {
+        group = vim.api.nvim_create_augroup('kickstart-lsp-attach', { clear = false }),
+        callback = function() vim.api.nvim_set_hl(0, 'NormalFloat', { link = 'FloatBorder' }) end,
+      })
+
       -- Rename the variable under your cursor.
       --  Most Language Servers support renaming across files, etc.
       map('grn', vim.lsp.buf.rename, '[R]e[n]ame')
@@ -642,13 +692,20 @@ do
       --  For example, in C this would take you to the header.
       map('grD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
 
-      -- The following two autocommands are used to highlight references of the
-      -- word under your cursor when your cursor rests there for a little while.
-      --    See `:help CursorHold` for information about when this is executed
-      --
-      -- When you move your cursor, the highlights will be cleared (the second autocommand).
+      ---@param client vim.lsp.Client
+      ---@param method vim.lsp.protocol.Method
+      ---@param bufnr? integer
+      ---@return boolean
+      local function client_supports_method(client, method, bufnr)
+        if vim.fn.has 'nvim-0.11' == 1 then
+          return client:supports_method(method, bufnr)
+        else
+          return client.supports_method(method, { bufnr = bufnr })
+        end
+      end
+
       local client = vim.lsp.get_client_by_id(event.data.client_id)
-      if client and client:supports_method('textDocument/documentHighlight', event.buf) then
+      if client and client_supports_method(client, 'textDocument/documentHighlight', event.buf) then
         local highlight_augroup = vim.api.nvim_create_augroup('kickstart-lsp-highlight', { clear = false })
         vim.api.nvim_create_autocmd({ 'CursorHold', 'CursorHoldI' }, {
           buffer = event.buf,
@@ -675,9 +732,34 @@ do
       -- code, if the language server you are using supports them
       --
       -- This may be unwanted, since they displace some of your code
-      if client and client:supports_method('textDocument/inlayHint', event.buf) then
+      if client and client_supports_method(client, 'textDocument/inlayHint', event.buf) then
         map('<leader>th', function() vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled { bufnr = event.buf }) end, '[T]oggle Inlay [H]ints')
       end
+
+      if client and client_supports_method(client, vim.lsp.protocol.Methods.textDocument_codeLens) then
+        local codelens_active = false
+        local create_codelens_autocmd = function()
+          vim.api.nvim_create_autocmd({ 'InsertLeave', 'BufEnter' }, {
+            group = vim.api.nvim_create_augroup('kickstart-lsp-codelens', { clear = false }),
+            callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
+          })
+        end
+        local toggle = function()
+          if codelens_active then
+            vim.lsp.codelens.clear()
+            vim.api.nvim_clear_autocmds { group = 'kickstart-lsp-codelens' }
+            codelens_active = false
+          else
+            create_codelens_autocmd()
+            vim.lsp.codelens.refresh { bufnr = 0 }
+            codelens_active = true
+          end
+        end
+        map('<leader>tl', toggle, '[T]oggle Code [L]enses')
+      end
+
+      require('custom.jdtls_config').on_attach(event)
+      require('custom.spring_tools').on_attach(event)
     end,
   })
 
@@ -695,7 +777,9 @@ do
     --    https://github.com/pmizio/typescript-tools.nvim
     --
     -- But for many setups, the LSP (`ts_ls`) will work just fine
-    -- ts_ls = {},
+    ts_ls = {},
+
+    jdtls = require('custom.jdtls_config').config(),
 
     stylua = {}, -- Used to format Lua code
 
@@ -714,10 +798,9 @@ do
             version = 'LuaJIT',
             path = { 'lua/?.lua', 'lua/?/init.lua' },
           },
+          completion = { callSnippet = 'Replace' },
           workspace = {
             checkThirdParty = false,
-            -- NOTE: this is a lot slower and will cause issues when working on your own configuration.
-            --  See https://github.com/neovim/nvim-lspconfig/issues/3189
             library = vim.tbl_extend('force', vim.api.nvim_get_runtime_file('', true), {
               '${3rd}/luv/library',
               '${3rd}/busted/library',
@@ -728,7 +811,7 @@ do
       ---@type lspconfig.settings.lua_ls
       settings = {
         Lua = {
-          format = { enable = false }, -- Disable formatting (formatting is done by stylua)
+          format = { enable = false },
         },
       },
     },
@@ -757,6 +840,8 @@ do
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
+
+  require('custom.spring_tools').config()
 
   for name, server in pairs(servers) do
     vim.lsp.config(name, server)
@@ -877,7 +962,7 @@ do
     -- the rust implementation via `'prefer_rust_with_warning'`
     --
     -- See `:help blink-cmp-config-fuzzy` for more information
-    fuzzy = { implementation = 'lua' },
+    fuzzy = { implementation = 'prefer_rust' },
 
     -- Shows a signature help window while you type arguments for a function
     signature = { enabled = true },
@@ -960,18 +1045,36 @@ do
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
-  -- require 'kickstart.plugins.debug'
+  require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
-  -- require 'kickstart.plugins.lint'
+  require 'kickstart.plugins.lint'
   -- require 'kickstart.plugins.autopairs'
   -- require 'kickstart.plugins.neo-tree'
-  -- require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
+  -- require 'kickstart.plugins.gitsigns'
 
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --
   --  Uncomment the following line and add your plugins to `lua/custom/plugins/*.lua` to get going.
-  -- require 'custom.plugins'
+  require 'custom.plugins'
 end
 
+-- Netrw configuration (even though I'll be trying neo-tree for a while)
+-- after a while I didn't love it, I now want to try oil, but maybe I want a combo of oil and neo-tree...?
+vim.g.netrw_liststyle = 3
+vim.g.netrw_preview = 1
+vim.g.netrw_winsize = 30
+vim.g.netrw_keepdir = 0
+vim.g.netrw_banner = 0
+vim.filetype.add {
+  extension = {
+    crisp = 'crisp',
+  },
+  filename = {
+    ['Crisp'] = 'crisp',
+  },
+}
+
+vim.lsp.enable 'sonarlint'
+require('custom.pr_commenst').setup()
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
