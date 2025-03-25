@@ -427,9 +427,12 @@ require('lazy').setup({
 
       -- See `:help telescope.builtin`
       local builtin = require 'telescope.builtin'
+      local find_files = function()
+        builtin.find_files { path_display = { 'truncate' } }
+      end
       vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
       vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
-      vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
+      vim.keymap.set('n', '<leader>sf', find_files, { desc = '[S]earch [F]iles' })
       vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
       vim.keymap.set('n', '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
@@ -695,6 +698,10 @@ require('lazy').setup({
       --  - capabilities (table): Override fields in capabilities. Can be used to disable certain LSP features.
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
+      -- dtls workspace resolution
+      local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ':p:h:t')
+
+      local jdtls_workspace_dir = vim.fn.expand '$HOME/.cache/jdtls/workspace/' .. project_name
       local servers = {
         -- clangd = {},
         -- gopls = {},
@@ -711,16 +718,27 @@ require('lazy').setup({
         jdtls = {
           cmd = {
             'jdtls',
+            '-Xmx1G',
             '-configuration',
             vim.fn.expand '$HOME/.cache/jdtls/config',
             '-data',
-            vim.fn.expand '$HOME/.cache/jdtls/workspace',
-            vim.fn.expand '--jvm-arg=-javaagent:$HOME/.local/share/nvim/mason/share/jdtls/lombok.jar',
-            '-Djava.import.generatesMetadataFilesAtProjectRoot=false',
+            jdtls_workspace_dir,
+            '--jvm-arg=-Djava.import.generatesMetadataFilesAtProjectRoot=false',
+            '--jvm-arg=-javaagent:' .. vim.fn.stdpath 'data' .. '/mason/share/jdtls/lombok.jar',
+            '--add-modules',
+            'ALL-SYSTEM',
+            '--add-exports',
+            'jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',
+            '--Amapstruct.verbose=true',
           },
           init_options = {
+            bundles = {
+              vim.fn.expand '$MASON/share/java-debug-adapter/com.microsoft.java.debug.plugin.jar',
+              vim.fn.expand '$MASON/share/java-test/com.microsoft.java.test.plugin.jar',
+            },
             settings = {
               java = {
+                home = '/opt/homebrew/Cellar/openjdk/23.0.2/libexec/openjdk.jdk/Contents/Home',
                 inlayHints = { parameterNames = { enabled = 'literals' } },
                 maven = { downloadSources = true },
                 references = { includeDecompiledSources = true },
@@ -735,7 +753,6 @@ require('lazy').setup({
                   enabled = true,
                 },
                 import = {
-                  generatesMetadataFilesAtProjectRoot = false,
                   gradle = { enabled = true, annotationProcessing = { enabled = true } },
                   maven = { enabled = true },
                 },
@@ -749,6 +766,13 @@ require('lazy').setup({
                     },
                   },
                 },
+                exclusions = {
+                  '**/node_modules/**',
+                  '**/.metadata/**',
+                  '**/archetype-resources/**',
+                  '**/META-INF/maven/**',
+                  '/**/test/**',
+                },
                 -- import order options
                 completion = {
                   importOrder = {
@@ -759,7 +783,21 @@ require('lazy').setup({
                     'java',
                     'javax',
                   },
+                  favoriteStaticMembers = {
+                    'org.junit.Assume.*',
+                    'org.junit.jupiter.api.Assertions.*',
+                    'org.junit.jupiter.api.Assumptions.*',
+                    'org.junit.jupiter.api.DynamicContainer.*',
+                    'org.junit.jupiter.api.DynamicTest.*',
+                    'org.assertj.core.api.Assertions.*',
+                    'org.assertj.core.api.Assertions.*',
+                    'org.mockito.Mockito.*',
+                  },
                 },
+                configuration = {
+                  updateBuildConfiguration = 'interactive',
+                },
+                autobuild = { enabled = false },
                 -- C24 formatting options
                 -- TODO:  add null-ls or something to integrate checkstyle
                 format = {
@@ -983,7 +1021,36 @@ require('lazy').setup({
       -- Load the colorscheme here.
       -- Like many other themes, this one has different styles, and you could load
       -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      --vim.cmd.colorscheme 'tokyonight-night'
+    end,
+  },
+  { 'catppuccin/nvim', name = 'catppuccin', priority = 1000 },
+  {
+    'rebelot/kanagawa.nvim',
+    priority = 1000,
+    config = function()
+      require('kanagawa').setup {
+        overrides = function(colors)
+          local theme = colors.theme
+          return {
+            Pmenu = { fg = theme.ui.shade0, bg = theme.ui.bg_p1 }, -- add `blend = vim.o.pumblend` to enable transparency
+            PmenuSel = { fg = 'NONE', bg = theme.ui.bg_p2 },
+            PmenuSbar = { bg = theme.ui.bg_m1 },
+            PmenuThumb = { bg = theme.ui.bg_p2 },
+          }
+        end,
+        colors = {
+          theme = {
+            all = {
+              ui = {
+                bg_gutter = 'none',
+              },
+            },
+          },
+        },
+      }
+
+      vim.cmd.colorscheme 'kanagawa-dragon'
     end,
   },
 
@@ -1071,7 +1138,7 @@ require('lazy').setup({
   -- require 'kickstart.plugins.indent_line',
   require 'kickstart.plugins.lint',
   require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.neo-tree',
   require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
@@ -1105,6 +1172,13 @@ require('lazy').setup({
     },
   },
 })
+
+-- Netrw configuration (even though I'll be trying neo-tree for a while)
+vim.g.netrw_liststyle = 3
+vim.g.netrw_preview = 1
+vim.g.netrw_winsize = 30
+vim.g.netrw_keepdir = 0
+vim.g.netrw_banner = 0
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
