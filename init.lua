@@ -436,6 +436,13 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>ss', builtin.builtin, { desc = '[S]earch [S]elect Telescope' })
       vim.keymap.set('n', '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
       vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
+      vim.keymap.set('n', '<leader>s*', function()
+        builtin.live_grep { default_text = vim.fn.expand '<cword>' }
+      end, { desc = '[S]earch by grep word under cursor' })
+      -- NOTE: Works well enough on a line (doesn't escape regex chars (yet), but not multiline)
+      vim.keymap.set('v', '<leader>sg', function()
+        builtin.live_grep { default_text = table.concat(vim.fn.getregion(vim.fn.getpos 'v', vim.fn.getpos '.', { type = vim.fn.mode() }), '\\n') }
+      end, { desc = '[S]earch selected by [G]rep' })
       vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
       vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
       vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
@@ -651,6 +658,9 @@ require('lazy').setup({
             end
             map('<leader>tl', toggle, '[T]oggle Code [L]enses')
           end
+          -- JDTLS specific configuration
+          require('custom.jdtls_config').on_attach(event)
+          require('custom.spring_tools').on_attach(event)
         end,
       })
 
@@ -698,10 +708,6 @@ require('lazy').setup({
       --  - capabilities (table): Override fields in capabilities. Can be used to disable certain LSP features.
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
-      -- dtls workspace resolution
-      local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ':p:h:t')
-
-      local jdtls_workspace_dir = vim.fn.expand '$HOME/.cache/jdtls/workspace/' .. project_name
       local servers = {
         -- clangd = {},
         -- gopls = {},
@@ -715,102 +721,7 @@ require('lazy').setup({
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
         --
-        jdtls = {
-          cmd = {
-            'jdtls',
-            '-Xmx1G',
-            '-configuration',
-            vim.fn.expand '$HOME/.cache/jdtls/config',
-            '-data',
-            jdtls_workspace_dir,
-            '--jvm-arg=-Djava.import.generatesMetadataFilesAtProjectRoot=false',
-            '--jvm-arg=-javaagent:' .. vim.fn.stdpath 'data' .. '/mason/share/jdtls/lombok.jar',
-            '--add-modules',
-            'ALL-SYSTEM',
-            '--add-exports',
-            'jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',
-            '--Amapstruct.verbose=true',
-          },
-          init_options = {
-            bundles = {
-              vim.fn.expand '$MASON/share/java-debug-adapter/com.microsoft.java.debug.plugin.jar',
-              vim.fn.expand '$MASON/share/java-test/com.microsoft.java.test.plugin.jar',
-            },
-            settings = {
-              java = {
-                home = '/opt/homebrew/Cellar/openjdk/23.0.2/libexec/openjdk.jdk/Contents/Home',
-                inlayHints = { parameterNames = { enabled = 'literals' } },
-                maven = { downloadSources = true },
-                references = { includeDecompiledSources = true },
-                saveActions = { organizeImports = true },
-                contentProvider = {
-                  preferred = 'fernflower',
-                },
-                signatureHelp = {
-                  enabled = true,
-                },
-                referencesCodeLens = {
-                  enabled = true,
-                },
-                import = {
-                  gradle = { enabled = true, annotationProcessing = { enabled = true } },
-                  maven = { enabled = true },
-                },
-                implementationsCodeLens = {
-                  enabled = true,
-                },
-                jdt = {
-                  ls = {
-                    lombokSupport = {
-                      enabled = true,
-                    },
-                  },
-                },
-                exclusions = {
-                  '**/node_modules/**',
-                  '**/.metadata/**',
-                  '**/archetype-resources/**',
-                  '**/META-INF/maven/**',
-                  '/**/test/**',
-                },
-                -- import order options
-                completion = {
-                  importOrder = {
-                    'static',
-                    'de.c24',
-                    'de.check24',
-                    '',
-                    'java',
-                    'javax',
-                  },
-                  favoriteStaticMembers = {
-                    'org.junit.Assume.*',
-                    'org.junit.jupiter.api.Assertions.*',
-                    'org.junit.jupiter.api.Assumptions.*',
-                    'org.junit.jupiter.api.DynamicContainer.*',
-                    'org.junit.jupiter.api.DynamicTest.*',
-                    'org.assertj.core.api.Assertions.*',
-                    'org.assertj.core.api.Assertions.*',
-                    'org.mockito.Mockito.*',
-                  },
-                },
-                configuration = {
-                  updateBuildConfiguration = 'interactive',
-                },
-                autobuild = { enabled = false },
-                -- C24 formatting options
-                -- TODO:  add null-ls or something to integrate checkstyle
-                format = {
-                  enabled = true,
-                  settings = {
-                    url = vim.fn.expand 'file://$HOME/c24_javastyle.xml',
-                    profile = 'c24-javastyle',
-                  },
-                },
-              },
-            },
-          },
-        },
+        jdtls = require('custom.jdtls_config').config(),
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
@@ -826,6 +737,7 @@ require('lazy').setup({
           },
         },
       }
+      require('custom.spring_tools').config()
 
       -- Ensure the servers and tools above are installed
       --
@@ -899,7 +811,9 @@ require('lazy').setup({
         -- python = { "isort", "black" },
         --
         -- You can use 'stop_after_first' to run the first available formatter from the list
-        -- javascript = { "prettierd", "prettier", stop_after_first = true },
+        javascript = { 'prettierd', 'prettier', stop_after_first = true },
+        typescript = { 'prettierd', 'prettier', stop_after_first = true },
+        typescriptreact = { 'prettierd', 'prettier', stop_after_first = true },
       },
     },
   },
@@ -1024,7 +938,15 @@ require('lazy').setup({
       --vim.cmd.colorscheme 'tokyonight-night'
     end,
   },
-  { 'catppuccin/nvim', name = 'catppuccin', priority = 1000 },
+  {
+    'catppuccin/nvim',
+    name = 'catppuccin',
+    lazy = false,
+    priority = 1000,
+    config = function()
+      vim.cmd.colorscheme 'catppuccin-frappe'
+    end,
+  },
   {
     'rebelot/kanagawa.nvim',
     priority = 1000,
@@ -1050,7 +972,7 @@ require('lazy').setup({
         },
       }
 
-      vim.cmd.colorscheme 'kanagawa-dragon'
+      --vim.cmd.colorscheme 'kanagawa-dragon'
     end,
   },
 
