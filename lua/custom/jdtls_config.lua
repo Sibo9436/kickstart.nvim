@@ -4,7 +4,6 @@ local M = {}
 -- Load configuration for java language server jdtls
 function M.config()
   -- jdtls workspace resolution
-
   local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ':p:h:t')
   local project_parent = vim.fn.fnamemodify(vim.fn.getcwd(), ':~:h:t')
 
@@ -20,9 +19,14 @@ function M.config()
   table.move(spring_tools_bundles, 1, #spring_tools_bundles, #jdtls_bundles + 1, jdtls_bundles)
 
   --capabilities ..?
-  --local capabilities = vim.lsp.protocol.make_client_capabilities()
-  --capabilities = vim.tbl_deep_extend('force', capabilities, require('cmp_nvim_lsp').default_capabilities())
-  --capabilities = vim.tbl_deep_extend('force', capabilities, { workspace = { executeCommand = { dynamicRegistration = true } } })
+  local capabilities = vim.lsp.protocol.make_client_capabilities()
+  capabilities = vim.tbl_deep_extend('force', capabilities, require('blink.cmp').get_lsp_capabilities())
+  capabilities = vim.tbl_deep_extend('force', capabilities, {
+    workspace = {
+      symbol = { dynamicRegistration = true },
+      didChangeWorkspaceFolders = { dynamicRegistration = true },
+    },
+  })
   return {
     cmd = {
       'jdtls',
@@ -49,7 +53,7 @@ function M.config()
       'jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',
       '--Amapstruct.verbose=true',
     },
-    --capabilities = capabilities,
+    capabilities = capabilities,
     init_options = {
       bundles = jdtls_bundles,
       settings = {
@@ -90,6 +94,9 @@ function M.config()
             '**/META-INF/maven/**',
             '/**/test/**',
           },
+          codeGeneration = {
+            toString = {},
+          },
           -- import order options
           completion = {
             importOrder = {
@@ -101,11 +108,11 @@ function M.config()
               'javax',
             },
             favoriteStaticMembers = {
-              'org.junit.Assume.*',
-              'org.junit.jupiter.api.Assertions.*',
-              'org.junit.jupiter.api.Assumptions.*',
-              'org.junit.jupiter.api.DynamicContainer.*',
-              'org.junit.jupiter.api.DynamicTest.*',
+              -- 'org.junit.Assume.*',
+              -- 'org.junit.jupiter.api.Assertions.*',
+              -- 'org.junit.jupiter.api.Assumptions.*',
+              -- 'org.junit.jupiter.api.DynamicContainer.*',
+              -- 'org.junit.jupiter.api.DynamicTest.*',
               'org.assertj.core.api.Assertions.*',
               'org.assertj.core.api.Assertions.*',
               'org.mockito.Mockito.*',
@@ -136,7 +143,7 @@ end
 -- :shrug:
 function M.on_attach(event)
   local client = vim.lsp.get_client_by_id(event.data.client_id)
-  if client.name ~= 'jdtls' then
+  if client == nil or client.name ~= 'jdtls' then
     return
   end
   -- For now we just register this fakeass command
@@ -156,6 +163,24 @@ function M.on_attach(event)
         else
           vim.notify '❌ This is NOT a test file.'
         end
+      else
+        vim.notify '⚠️ No result returned.'
+      end
+    end)
+  end, {})
+  vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
+    client:exec_cmd({
+      command = 'vscode.java.resolveMainClass',
+      arguments = {},
+    }, {
+      bufnr = event.buf,
+    }, function(err, result)
+      if err then
+        vim.notify('Error while executing JavaJumpToMain: ' .. err.message, vim.log.levels.ERROR, {})
+        return
+      elseif result ~= nil and #result > 0 then
+        -- TODO: handle multiple results ...?
+        vim.cmd('edit ' .. vim.fn.fnameescape(result[1].filePath))
       else
         vim.notify '⚠️ No result returned.'
       end
