@@ -546,6 +546,17 @@ require('lazy').setup({
             vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = 'LSP: ' .. desc })
           end
 
+          -- NOTE: I am now thinking wether I should actually move all my custom configurations and keymapping
+          -- outside of init.lua
+          -- so not to conflict too often
+          -- even though rebasing works quite fine
+          --
+          -- Remap K to hover to add rounded borders
+          -- could be done with vim.o.winborder = 'rounded' but that messes up telescope borders
+          map('K', function()
+            vim.lsp.buf.hover { border = 'rounded', max_width = 90 }
+          end, 'Hover')
+
           -- Rename the variable under your cursor.
           --  Most Language Servers support renaming across files, etc.
           map('grn', vim.lsp.buf.rename, '[R]e[n]ame')
@@ -572,11 +583,18 @@ require('lazy').setup({
 
           -- Fuzzy find all the symbols in your current document.
           --  Symbols are things like variables, functions, types, etc.
-          map('gO', require('telescope.builtin').lsp_document_symbols, 'Open Document Symbols')
+          --map('gO', require('telescope.builtin').lsp_document_symbols, 'Open Document Symbols')
+          map('gO', require('custom.telescope.document_symbol').document_symbols, 'Open Document Symbols')
 
           -- Fuzzy find all the symbols in your current workspace.
           --  Similar to document symbols, except searches over your entire project.
-          map('gW', require('telescope.builtin').lsp_dynamic_workspace_symbols, 'Open Workspace Symbols')
+          map('gW', function(x)
+            if #(vim.lsp.get_clients { bufnr = event.buf }) > 1 then
+              require('custom.telescope.document_symbol').lsp_dynamic_workspace_symbol(x)
+            else
+              require('telescope.builtin').lsp_dynamic_workspace_symbols(x)
+            end
+          end, 'Open Workspace Symbols')
 
           -- Jump to the type of the word under your cursor.
           --  Useful when you're not sure what type a variable is and you want to see
@@ -910,7 +928,7 @@ require('lazy').setup({
       -- the rust implementation via `'prefer_rust_with_warning'`
       --
       -- See :h blink-cmp-config-fuzzy for more information
-      fuzzy = { implementation = 'lua' },
+      fuzzy = { implementation = 'prefer_rust' },
 
       -- Shows a signature help window while you type arguments for a function
       signature = { enabled = true },
