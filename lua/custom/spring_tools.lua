@@ -17,6 +17,8 @@ function M.config()
     cmd = {
       'java',
       '-Dlsp.completions.indentation.enable=true',
+      '-Dlanguageserver.boot.enableJandexIndex=false',
+      -- '-Dlogging.level.org.springframework.ide.vscode=debug',
       '-Xmx1024m',
       '-XX:TieredStopAtLevel=1',
       '-jar',
@@ -28,7 +30,38 @@ function M.config()
     capabilities = capabilities,
   }
   -- vim.lsp.enable 'springboot_ls'
-  --vim.lsp.set_log_level 'debug'
+  -- vim.lsp.set_log_level 'debug'
+end
+
+-- create handler to map a sts request to a jdtls command
+local function makeStsHandler(jdlts_command, title)
+  return function(err, result, ctx)
+    vim.notify('called ' .. jdlts_command, vim.log.levels.INFO)
+    local clients = vim.lsp.get_clients { name = 'jdtls' }
+    if #clients == 0 then
+      vim.notify('No jdtls client running, sts/javadoc failed', vim.log.levels.ERROR)
+      return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
+    end
+    local jdtls = clients[1]
+    local co = coroutine.running()
+    jdtls:exec_cmd(
+      {
+        title = title,
+        command = jdlts_command,
+        arguments = result.arguments,
+      },
+      ctx,
+      function(err, res, _)
+        coroutine.resume(co, err, res)
+      end
+    )
+    local error, response = coroutine.yield()
+    if error then
+      vim.notify('error: ' .. vim.inspect(error), vim.log.levels.ERROR)
+      return error
+    end
+    return response
+  end
 end
 
 function M.on_attach(event)
@@ -40,36 +73,32 @@ function M.on_attach(event)
   --  |lsp-handler| for a specific server. (Note: only for server-to-client
   --  requests/notifications, not client-to-server.)
   client.handlers['sts/addClasspathListener'] = function(err, result, ctx)
-    --vim.notify('Received sts/addClasspathListener Command' .. vim.inspect(result), vim.log.levels.INFO, {})
+    vim.notify(client.name .. ' sts/addClasspathListener', vim.log.levels.INFO, {})
     local clients = vim.lsp.get_clients {
       --bufnr = ctx.bufnr,
       name = 'jdtls',
     }
     if #clients == 0 then
       vim.notify('No active jdtls client found, sts needs one running', vim.log.levels.ERROR, {})
-      return {
-        err = vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError),
-      }
+      return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
     else
       local jdtls_client = clients[1]
       jdtls_client:request('workspace/executeCommand', {
         command = 'sts.java.addClasspathListener',
         arguments = { result.callbackCommandId },
-      }, function(err, result, ctx) end, ctx.bufnr)
+      }, function(err, result, ctx)
+        vim.notify('addclasspathListner result: ' .. vim.inspect(result), vim.log.levels.INFO)
+      end, ctx.bufnr)
     end
 
-    return {
-      result = { success = true },
-    }
+    return { success = true }
   end
   client.handlers['sts/removeClasspathListener'] = function(err, result, ctx)
     --vim.notify('Received sts/removeClasspathListener Command', vim.log.levels.INFO, {})
     local clients = vim.lsp.get_clients { bufnr = ctx.bufnr, name = 'jdtls' }
     if #clients == 0 then
       vim.notify('No active jdtls client found, sts needs one running', vim.log.levels.ERROR, {})
-      return {
-        err = vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError),
-      }
+      return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
     else
       local jdtls_client = clients[1]
       jdtls_client:request('workspace/executeCommand', {
@@ -77,12 +106,43 @@ function M.on_attach(event)
         arguments = { result.callbackCommandId },
       }, function(err, result, ctx) end, ctx.bufnr)
     end
-    return { result = { success = true } }
+    return { success = true }
   end
   client.handlers['workspace/executeClientCommand'] = function(err, result, ctx)
-    vim.notify('Client asks for a client Command' .. vim.inspect(result.command), vim.log.levels.DEBUG, {})
+    vim.notify(client.name .. ' client asks for a client command ' .. vim.inspect(result.command), vim.log.levels.DEBUG, {})
     -- get all clients for this buffer
+    if result.command == 'vscode-spring-boot.ls.start' then
+      vim.lsp.enable 'springboot_ls'
+      local spls_id = vim.lsp.start(vim.lsp.config['springboot_ls'], {
+        bufnr = event.buf,
+        reuse_client = vim.lsp.config['springboot_ls'].reuse_client,
+        _root_markers = vim.lsp.config['springboot_ls'].root_markers,
+      })
+      if not spls_id then
+        return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
+      else
+        local spls = vim.lsp.get_client_by_id(spls_id)
+        if spls == nil then
+          return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
+        end
+        -- force start classpath listening
+        spls:request('workspace/executeCommand', {
+          title = 'EnableClasspathListening',
+          command = 'sts.vscode-spring-boot.enableClasspathListening',
+          arguments = { 'true' },
+        }, function(err, _, _)
+          if err ~= nil then
+            vim.notify('could not enable classpath listening: ' .. err.message, vim.log.levels.ERROR)
+          end
+        end, ctx.bufnr)
+        return { result = { success = true } }
+      end
+    end
     local clients = vim.lsp.get_clients { bufnr = ctx.bufnr }
+    if #clients < 2 then
+      vim.notify('no other clients to send the command', vim.log.levels.ERROR)
+      return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
+    end
     local co = coroutine.running()
     for _, ac_client in ipairs(clients) do
       -- only register this back and forth for jdtls and springboot_ls
@@ -91,19 +151,33 @@ function M.on_attach(event)
         -- seems I cannot use exec_cmd because of not very dynamic registration of execute commands
         --ac_client:exec_cmd(result, ctx, function(err, result, ctx)
         ac_client:request('workspace/executeCommand', result, function(err, result, ctx)
-          coroutine.resume(co, {
-            err = err,
-            result = result,
-          })
+          coroutine.resume(co, err, result)
         end, ctx.bufnr)
         break
       end
     end
 
     -- blocks the current coroutine to wait for the exec_cmd result
-    local ret = coroutine.yield()
-    return ret
+    local error, response = coroutine.yield()
+    if error then
+      vim.notify('error: ' .. vim.inspect(error), vim.log.levels.ERROR)
+      return error
+    end
+    vim.notify('[' .. client.name .. '/' .. result.command .. '] -> ' .. vim.inspect(response), vim.log.levels.INFO)
+    return response
   end
+
+  -- weird handlers required in https://github.com/spring-projects/spring-tools/wiki/Developer-Manual-Java-Messages
+  client.handlers['sts/javaType'] = makeStsHandler('sts.java.type', 'sts.java.type')
+  client.handlers['sts/javadocHoverLink'] = makeStsHandler('sts.java.javadocHoverLink', 'sts.java.javadocHoverLink')
+  client.handlers['sts/javaLocation'] = makeStsHandler('sts.java.location', 'sts.java.location')
+  client.handlers['sts/javadoc'] = makeStsHandler('sts.java.javadoc', 'sts.java.javadoc')
+  client.handlers['sts/javaSearchTypes'] = makeStsHandler('sts.java.search.types', 'sts.java.search.types')
+  client.handlers['sts/javaSearchPackages'] = makeStsHandler('sts.java.search.packages', 'sts.java.search.packages')
+  client.handlers['sts/javaSubTypes'] = makeStsHandler('sts.java.hierarchy.subtypes', 'sts.java.hierarchy.subtypes')
+  client.handlers['sts/javaSuperTypes'] = makeStsHandler('sts.java.hierarchy.supertypes', 'sts.java.hierarchy.supertypes')
+  client.handlers['sts/javaCodeComplete'] = makeStsHandler('sts.java.code.completions', 'sts.java.code.completions')
+  client.handlers['sts/project/gav'] = makeStsHandler('sts.project.gav', 'sts.project.gav')
 end
 
 return M
