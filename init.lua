@@ -654,7 +654,7 @@ require('lazy').setup({
           end
           -- The following code creates a keymap to toggle code lenses in your
           -- code, if the language server you are using supports them
-          if client and client.supports_method(vim.lsp.protocol.Methods.textDocument_codeLens) then
+          if client and client:supports_method(vim.lsp.protocol.Methods.textDocument_codeLens) then
             local codelens_active = false
             local create_codelens_autocmd = function()
               vim.api.nvim_create_autocmd({ 'InsertLeave', 'BufEnter' }, {
@@ -671,6 +671,7 @@ require('lazy').setup({
                 codelens_active = false
               else
                 create_codelens_autocmd()
+                vim.lsp.codelens.refresh { bufnr = 0 }
                 codelens_active = true
               end
             end

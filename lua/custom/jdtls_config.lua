@@ -1,5 +1,6 @@
 -- Logic for setting up jdtls
 local M = {}
+local ui = require 'custom/ui'
 
 -- Load configuration for java language server jdtls
 function M.config()
@@ -28,6 +29,7 @@ function M.config()
     },
   })
   return {
+    filetypes = { 'java', 'yaml', 'properties' },
     cmd = {
       'jdtls',
       '-Xmx1G',
@@ -56,10 +58,15 @@ function M.config()
     capabilities = capabilities,
     init_options = {
       bundles = jdtls_bundles,
+      extendedClientCapabilities = {
+        executeClientCommandSupport = true,
+        generateToStringPromptSupport = true,
+        generateConstructorsPromptSupport = true,
+      },
       settings = {
         java = {
           home = '/opt/homebrew/Cellar/openjdk/23.0.2/libexec/openjdk.jdk/Contents/Home',
-          inlayHints = { parameterNames = { enabled = 'literals' } },
+          inlayHints = { uparameterNames = { enabled = 'literals' } },
           maven = { downloadSources = true },
           eclipse = { downloadSources = true },
           references = { includeDecompiledSources = true },
@@ -131,9 +138,6 @@ function M.config()
               profile = 'c24-javastyle',
             },
           },
-          extendedClientCapabilities = {
-            executeClientCommandSupport = true,
-          },
         },
       },
     },
@@ -145,6 +149,44 @@ function M.on_attach(event)
   local client = vim.lsp.get_client_by_id(event.data.client_id)
   if client == nil or client.name ~= 'jdtls' then
     return
+  end
+  client.commands['java.action.generateToStringPrompt'] = function(cmd, ctx)
+    local params = ctx.params
+    local bufnr = ctx.bufnr
+
+    client:request('java/checkToStringStatus', params, function(err, res, ctx)
+      if err ~= nil then
+        vim.notify(err.message, vim.log.levels.ERROR)
+        return
+      end
+      if not res then
+        return
+      end
+      -- toString exists already
+      if res.exists then
+        vim.notify('Updating existing toString not supported yet', vim.log.levels.ERROR)
+        return
+      end
+      ui.select(
+        {
+          prompt = 'To String',
+          index_map = function(v)
+            return v.name
+          end,
+          custom_virt = function(v)
+            return { { v.isField and 'field' or '', 'Comment' } }
+          end,
+        },
+        res.fields,
+        function(selected_fields)
+          client:request('java/generateToString', { context = params, fields = selected_fields }, function(err, res, ctx)
+            if err == nil and res ~= nil then
+              vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+            end
+          end, bufnr)
+        end
+      )
+    end, bufnr)
   end
   -- For now we just register this fakeass command
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaIsTestFile', function()
@@ -168,6 +210,33 @@ function M.on_attach(event)
       end
     end)
   end, {})
+  -- TODO: bello ma non proprio un prompt per ora
+  client.commands['java.action.generateConstructorsPrompt'] = function(cmd, ctx)
+    local bufnr = ctx.bufnr
+    local params = cmd.arguments[1]
+    client:request('java/checkConstructorsStatus', params, function(err, res, ctx)
+      ui.select(
+        {
+          prompt = 'Constructors fields',
+          index_map = function(v)
+            return v.name
+          end,
+        },
+        res.fields,
+        function(selected)
+          client:request('java/generateConstructors', {
+            context = params,
+            constructors = res.constructors,
+            fields = selected,
+          }, function(err, res, ctx)
+            if not err and res ~= nil then
+              vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+            end
+          end, bufnr)
+        end
+      )
+    end, bufnr)
+  end
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
     client:exec_cmd({
       command = 'vscode.java.resolveMainClass',
@@ -187,10 +256,20 @@ function M.on_attach(event)
     end)
   end, {})
   -- NOTE: I don't love this here but let's see
-  local spring = vim.lsp.start(vim.lsp.config['springboot_ls'])
-  if spring then
-    vim.lsp.buf_attach_client(event.buf, spring)
+
+  -- TODO: I think this should be removed
+  -- check if springboot_lsp is up
+  local clients = vim.lsp.get_clients { name = 'springboot_ls' }
+  if #clients > 0 then
+    return
   end
+  -- if no springboot_ls client has been found register it
+  vim.lsp.enable 'springboot_ls'
+  vim.lsp.start(vim.lsp.config['springboot_ls'], {
+    bufnr = event.buf,
+    reuse_client = vim.lsp.config['springboot_ls'].reuse_client,
+    _root_markers = vim.lsp.config['springboot_ls'].root_markers,
+  })
 end
 
 return M
