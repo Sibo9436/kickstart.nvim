@@ -756,6 +756,10 @@ require('lazy').setup({
           },
         },
       }
+      for server_name, server_config in pairs(servers) do
+        -- merges with default config provided by lspconfig
+        vim.lsp.config(server_name, server_config)
+      end
       require('custom.spring_tools').config()
 
       -- Ensure the servers and tools above are installed
@@ -779,17 +783,7 @@ require('lazy').setup({
 
       require('mason-lspconfig').setup {
         ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
-        automatic_installation = false,
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
+        automatic_enable = true,
       }
     end,
   },
