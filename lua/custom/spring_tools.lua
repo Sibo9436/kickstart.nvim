@@ -87,7 +87,7 @@ function M.on_attach(event)
         command = 'sts.java.addClasspathListener',
         arguments = { result.callbackCommandId },
       }, function(err, result, ctx)
-        vim.notify('addclasspathListner result: ' .. vim.inspect(result), vim.log.levels.INFO)
+        vim.notify('addClasspathListener result: ' .. vim.inspect(result), vim.log.levels.INFO)
       end, ctx.bufnr)
     end
 

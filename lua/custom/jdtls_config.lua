@@ -33,7 +33,9 @@ function M.config()
     cmd = {
       'jdtls',
       '-Xmx1G',
-      '-XX:+UseG1GC',
+      -- '-XX:+UseG1GC',
+      '-XX:+UseZGC',
+      '-XX:+ZGenerational',
       '-XX:+UseStringDeduplication',
       '-configuration',
       vim.fn.expand '$HOME/.cache/jdtls/config',
@@ -62,6 +64,7 @@ function M.config()
         executeClientCommandSupport = true,
         generateToStringPromptSupport = true,
         generateConstructorsPromptSupport = true,
+        generateDelegateMethodsPromptSupport = true,
       },
       settings = {
         java = {
@@ -169,7 +172,7 @@ function M.on_attach(event)
       end
       ui.select(
         {
-          prompt = 'To String',
+          title = 'To String',
           index_map = function(v)
             return v.name
           end,
@@ -217,7 +220,7 @@ function M.on_attach(event)
     client:request('java/checkConstructorsStatus', params, function(err, res, ctx)
       ui.select(
         {
-          prompt = 'Constructors fields',
+          title = 'Constructors fields',
           index_map = function(v)
             return v.name
           end,
@@ -236,6 +239,9 @@ function M.on_attach(event)
         end
       )
     end, bufnr)
+  end
+  client.commands['java.action.generateDelegateMethodsPrompt'] = function(cmd, ctx)
+    print(vim.inspect(cmd))
   end
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
     client:exec_cmd({
