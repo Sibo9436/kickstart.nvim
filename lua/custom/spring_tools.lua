@@ -64,6 +64,7 @@ local function makeStsHandler(jdlts_command, title)
   end
 end
 
+--I'm sure half of this could be on general lsp config and not on attach
 function M.on_attach(event)
   local client = vim.lsp.get_client_by_id(event.data.client_id)
   if not client or (client.name ~= 'springboot_ls' and client.name ~= 'jdtls') then
@@ -108,9 +109,12 @@ function M.on_attach(event)
     end
     return { success = true }
   end
+  -- Tries to match command to known commands and if it misses sends it to the other client
+  -- NOTE: can I make it better in the future??
   client.handlers['workspace/executeClientCommand'] = function(err, result, ctx)
     vim.notify(client.name .. ' client asks for a client command ' .. vim.inspect(result.command), vim.log.levels.DEBUG, {})
     -- get all clients for this buffer
+    --TODO: move this to commands I guess (or add a new client_commands?)
     if result.command == 'vscode-spring-boot.ls.start' then
       vim.lsp.enable 'springboot_ls'
       local spls_id = vim.lsp.start(vim.lsp.config['springboot_ls'], {
@@ -136,6 +140,15 @@ function M.on_attach(event)
           end
         end, ctx.bufnr)
         return { result = { success = true } }
+      end
+    end
+    local client_command_fn = (client.commands and client.commands[result.command]) or (vim.lsp.commands and vim.lsp.commands[result.command])
+    if client_command_fn then
+      local ok, client_command_result = pcall(client_command_fn, result, ctx)
+      if ok then
+        return client_command_result
+      else
+        return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError, client_command_result)
       end
     end
     local clients = vim.lsp.get_clients { bufnr = ctx.bufnr }

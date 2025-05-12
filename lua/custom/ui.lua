@@ -2,6 +2,21 @@
 -- Dependis on plenary.nvim (for now???)
 local M = {}
 
+local highlights = {
+  SiboUINormal = { default = true, link = 'Normal' },
+  SiboUIPopup = { default = true, link = 'PopupColor1' },
+  SiboUICurrent = { default = true, link = 'Visual' },
+  SiboUISelection = { default = true, link = 'Type' },
+  SiboUIGutter = { default = true, link = 'Special' },
+  -- hide cursor for selection windows
+  SiboUICursorHidden = { default = true, blend = 100 },
+}
+
+for k, v in pairs(highlights) do
+  -- NOTE: do I want to keep this globally available?
+  vim.api.nvim_set_hl(0, k, v)
+end
+
 -- Prompts the user for a selection and calls the provided cb function
 -- with the data
 ---@generic T: any
@@ -12,6 +27,9 @@ local M = {}
 ---@param values T[]
 ---@param cb fun(sel: T[]|nil)
 M.select = function(opts, values, cb)
+  if not values or #values == 0 then
+    return
+  end
   local prompt = opts.prompt or 'Select zero or more:'
   local index_map = opts.index_map or function(v)
     return tostring(v)
@@ -33,15 +51,16 @@ M.select = function(opts, values, cb)
   local width = math.floor(vim.o.columns * 0.4)
   for idx, line in ipairs(strings) do
     -- marks for decoration
+    -- TODO: I guess I should
     vim.api.nvim_buf_set_extmark(buf, vim.api.nvim_create_namespace 'customuigutter', idx - 1, 0, {
-      virt_text = { { ' ', 'Comment' }, { tostring(idx) .. ': ', 'Comment' } },
+      virt_text = { { ' ', 'SiboUIGutter' }, { tostring(idx) .. ': ', 'SiboUIGutter' } },
       virt_text_pos = 'inline',
     })
     local sw = vim.fn.strdisplaywidth(line) + 6
     if virts then
-      print(vim.inspect(virts[idx]))
       vim.api.nvim_buf_set_extmark(buf, vim.api.nvim_create_namespace 'customuivirt', idx - 1, -1, {
         virt_text = virts[idx],
+        hl_mode = 'combine',
         virt_text_pos = 'eol_right_align',
       })
     end
@@ -52,7 +71,8 @@ M.select = function(opts, values, cb)
   local row = math.floor((vim.o.lines - height) / 2)
   local col = math.floor((vim.o.columns - width) / 2)
   local win = vim.api.nvim_open_win(buf, true, {
-    title = prompt,
+    -- Padded for prettiness
+    title = { { '▏' .. prompt .. '▕', 'FloatBorder' } },
     title_pos = 'center',
     border = 'single',
     relative = 'editor',
@@ -77,12 +97,12 @@ M.select = function(opts, values, cb)
     vim.api.nvim_win_set_cursor(0, c)
     vim.api.nvim_buf_clear_namespace(buf, vim.api.nvim_create_namespace 'customuigutter', line - 1, line)
     vim.api.nvim_buf_set_extmark(buf, vim.api.nvim_create_namespace 'customuigutter', line - 1, 0, {
-      virt_text = { { sel[line] and '+' or ' ', 'Comment' }, { tostring(line) .. ': ', 'Comment' } },
+      virt_text = { { sel[line] and '+' or ' ', 'SiboUIGutter' }, { tostring(line) .. ': ', 'SiboUIGutter' } },
       virt_text_pos = 'inline',
     })
     if sel[line] then
       marks[line] = vim.api.nvim_buf_set_extmark(buf, ns, line - 1, 0, {
-        hl_group = 'Special',
+        hl_group = 'SiboUISelection',
         hl_eol = true,
         end_line = line,
         end_col = 0,
@@ -116,7 +136,11 @@ M.select = function(opts, values, cb)
       end
     end,
   })
+  -- Window styling
   vim.api.nvim_set_option_value('cursorline', true, { win = win })
+  -- TODO: check if setting up a window local highlight override could be better
+  vim.api.nvim_set_option_value('winhl', 'Normal:SiboUINormal,EndOfBuffer:SiboUINormal,CursorLine:SiboUICurrent', { win = win })
+  -- Buffer keymaps
   vim.api.nvim_buf_set_keymap(buf, 'n', '<Tab>', '', { callback = toggle_sel })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<S-Tab>', '', { callback = toggle_sel_move_up })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<Space>', '', { callback = toggle_sel })
