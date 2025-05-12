@@ -61,10 +61,12 @@ function M.config()
     init_options = {
       bundles = jdtls_bundles,
       extendedClientCapabilities = {
+        advancedOrganizeImportsSupport = true,
         executeClientCommandSupport = true,
         generateToStringPromptSupport = true,
         generateConstructorsPromptSupport = true,
         generateDelegateMethodsPromptSupport = true,
+        overrideMethodsPromptSupport = true,
       },
       settings = {
         java = {
@@ -165,14 +167,14 @@ function M.on_attach(event)
       if not res then
         return
       end
-      -- toString exists already
+      -- toString exists already, I could prompt but I don't think it's necessary
       if res.exists then
-        vim.notify('Updating existing toString not supported yet', vim.log.levels.ERROR)
+        vim.notify('ToString already exists', vim.log.levels.ERROR)
         return
       end
       ui.select(
         {
-          title = 'To String',
+          prompt = 'To String',
           index_map = function(v)
             return v.name
           end,
@@ -216,11 +218,15 @@ function M.on_attach(event)
   -- TODO: bello ma non proprio un prompt per ora
   client.commands['java.action.generateConstructorsPrompt'] = function(cmd, ctx)
     local bufnr = ctx.bufnr
-    local params = cmd.arguments[1]
+    local params = cmd.arguments[1] --[[@as table]]
     client:request('java/checkConstructorsStatus', params, function(err, res, ctx)
+      if err then
+        vim.notify(err.message, vim.log.levels.ERROR)
+        return
+      end
       ui.select(
         {
-          title = 'Constructors fields',
+          prompt = 'Constructors fields',
           index_map = function(v)
             return v.name
           end,
@@ -241,7 +247,116 @@ function M.on_attach(event)
     end, bufnr)
   end
   client.commands['java.action.generateDelegateMethodsPrompt'] = function(cmd, ctx)
-    print(vim.inspect(cmd))
+    local bufnr = ctx.bufnr
+    local params = cmd.arguments[1] --[[@as table]]
+    client:request('java/checkDelegateMethodsStatus', params, function(err, res, ctx)
+      if err then
+        vim.notify(err.message, vim.log.levels.ERROR)
+        return
+      end
+      ui.select(
+        {
+          prompt = 'Select fields to delegate',
+          index_map = function(v)
+            return v.field.name
+          end,
+        },
+        res.delegateFields,
+        function(selected)
+          if not selected then
+            return
+          end
+          local delegate_entries = {}
+          for _, delegate_field in ipairs(selected) do
+            for _, delegate_method in ipairs(delegate_field.delegateMethods) do
+              table.insert(delegate_entries, { field = delegate_field.field, delegateMethod = delegate_method })
+            end
+          end
+          ui.select(
+            {
+              prompt = cmd.title,
+              index_map = function(entry)
+                return entry.field.name .. '.' .. entry.delegateMethod.name
+              end,
+              custom_virt = function(entry)
+                local res = {}
+                local list = entry.delegateMethod.parameters
+                for idx, param in ipairs(list) do
+                  table.insert(res, { param .. (idx == #list and '' or ','), 'Comment' })
+                end
+                return res
+              end,
+            },
+            delegate_entries,
+            function(selected_entries)
+              client:request('java/generateDelegateMethods', {
+                context = params,
+                delegateEntries = selected_entries,
+              }, function(err, res, ctx)
+                if not err and res ~= nil then
+                  vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+                end
+              end, bufnr)
+            end
+          )
+        end
+      )
+    end, bufnr)
+  end
+  -- NOTE: for some reason this is not a executeCommand but an executeClientCommand :/
+  client.commands['java.action.organizeImports.chooseImports'] = function(cmd, ctx)
+    local file = cmd.arguments[1] --[[@as string]]
+    local import_selections = cmd.arguments[2] --[[@as table[]]
+    local co = coroutine.running()
+    -- TODO: for now I'm picking one at a time but my goal would be to
+    -- have a ui.select_by or similar that groups them and lets me
+    -- select only one out of a group
+    -- Only thing is that being able to search fast for the imports is really good
+    local result = {}
+    for _, import_selection in ipairs(import_selections) do
+      vim.ui.select(import_selection.candidates, {
+        prompt = 'Select import',
+        format_item = function(item)
+          return item.fullyQualifiedName
+        end,
+      }, function(choice)
+        coroutine.resume(co, choice)
+      end)
+      local selection_result = coroutine.yield(co)
+      table.insert(result, selection_result)
+    end
+    ---@diagnostic disable-next-line: redundant-return-value
+    return result
+  end
+  client.commands['java.action.overrideMethodsPrompt'] = function(cmd, ctx)
+    local bufnr = ctx.bufnr
+    local params = ctx.params
+    client:request('java/listOverridableMethods', params, function(err, res, ctx)
+      ui.select(
+        {
+          prompt = 'Add overrides for ' .. res.type,
+          index_map = function(o_method)
+            local arg_string = ''
+            for idx, arg in ipairs(o_method.parameters) do
+              arg_string = arg_string .. arg .. (idx ~= #o_method.parameters and ', ' or '')
+            end
+            return o_method.name .. '(' .. arg_string .. ')'
+          end,
+          custom_virt = function(o_method)
+            return { { o_method.declaringClass, 'Comment' } }
+          end,
+        },
+        res.methods,
+        function(selected_methods)
+          client:request('java/addOverridableMethods', { context = params, overridableMethods = selected_methods }, function(err, res, ctx)
+            if res and not err then
+              vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+            end
+          end, bufnr)
+          print(vim.inspect(selected_methods))
+        end
+      )
+    end, bufnr)
   end
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
     client:exec_cmd({
