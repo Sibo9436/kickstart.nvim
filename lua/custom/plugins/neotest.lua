@@ -53,6 +53,7 @@ return {
         enabled = false,
       },
       adapters = {
+        require 'custom/jdtls_test_adapter' {},
         require 'neotest-jest' {
           jest_test_discovery = true,
           jestCommand = 'npm test --',
