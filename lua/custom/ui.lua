@@ -7,8 +7,8 @@ local highlights = {
   SiboUIPopup = { default = true, link = 'PopupColor1' },
   SiboUICurrent = { default = true, link = 'Visual' },
   SiboUISelection = { default = true, link = 'Type' },
-  SiboUIGutter = { default = true, link = 'Special' },
-  -- hide cursor for selection windows
+  SiboUIGutter = { default = true, link = 'Identifier' },
+  -- hide cursor for selection windows, doesn't seem to work rn :)
   SiboUICursorHidden = { default = true, blend = 100 },
 }
 
@@ -48,7 +48,7 @@ M.select = function(opts, values, cb)
   vim.api.nvim_set_option_value('bufhidden', 'wipe', { buf = buf })
   vim.api.nvim_set_option_value('modifiable', false, { buf = buf })
   local height = #strings + 4
-  local width = math.floor(vim.o.columns * 0.4)
+  local width = math.floor(vim.o.columns * 0.35)
   for idx, line in ipairs(strings) do
     -- marks for decoration
     -- TODO: I guess I should
@@ -72,7 +72,8 @@ M.select = function(opts, values, cb)
   local col = math.floor((vim.o.columns - width) / 2)
   local win = vim.api.nvim_open_win(buf, true, {
     -- Padded for prettiness
-    title = { { '▏' .. prompt .. '▕', 'FloatBorder' } },
+    -- title = { { '▏' .. prompt .. '▕', 'FloatBorder' } },
+    title = { { prompt, 'FloatBorder' } },
     title_pos = 'center',
     border = 'single',
     relative = 'editor',
@@ -152,6 +153,7 @@ M.select = function(opts, values, cb)
       end
     end,
   })
+  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '<Esc>', {})
 end
 
 return M

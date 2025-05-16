@@ -1,3 +1,6 @@
+-- FIXME: Turns out a client:request_sync exists ... :/
+-- so I think some of this code could be semplified/fixed
+
 -- Logic for setting up jdtls
 local M = {}
 local ui = require 'custom/ui'
@@ -11,12 +14,35 @@ function M.config()
   local jdtls_workspace_dir = vim.fn.expand '$HOME/.cache/jdtls/workspace/' .. project_parent .. '/' .. project_name
   local mason_share = vim.fn.expand '$MASON/share'
   local spring_share = vim.fn.expand '$HOME/.local/share/spring/jdtls-extensions/'
-  --local java_test_plugins = vim.fn.glob(mason_share .. '/java-test/*.jar', true, true)
+  -- local java_test_plugins = vim.fn.glob(mason_share .. '/java-test/*.jar', true, true)
+  local test_bundle_names = {
+    'org.eclipse.jdt.junit4.runtime_',
+    'org.eclipse.jdt.junit5.runtime_',
+    'junit-jupiter-api',
+    'junit-jupiter-engine',
+    'junit-jupiter-migrationsupport',
+    'junit-jupiter-params',
+    'junit-vintage-engine',
+    'org.opentest4j',
+    'junit-platform-commons',
+    'junit-platform-engine',
+    'junit-platform-launcher',
+    'junit-platform-runner',
+    'junit-platform-suite-api',
+    'junit-platform-suite-commons',
+    'junit-platform-suite-engine',
+    'org.apiguardian.api',
+    'org.jacoco.core',
+  }
+  local java_test_plugins = vim.tbl_map(function(test_bundle_name)
+    --only return a string, hopefully we're only matching one file
+    vim.fn.glob(mason_share .. '/java-test/' .. test_bundle_name .. '*.jar', true, false)
+  end, test_bundle_names)
   local java_debug_bundles = vim.fn.glob(mason_share .. '/java-debug-adapter/*.jar', true, true)
   local spring_tools_bundles = vim.fn.glob(spring_share .. '*.jar', true, true)
   local jdtls_bundles = {}
   table.move(java_debug_bundles, 1, #java_debug_bundles, #jdtls_bundles + 1, jdtls_bundles)
-  --table.move(java_test_plugins, 1, #java_test_plugins, #jdtls_bundles + 1, jdtls_bundles)
+  table.move(java_test_plugins, 1, #java_test_plugins, #jdtls_bundles + 1, jdtls_bundles)
   table.move(spring_tools_bundles, 1, #spring_tools_bundles, #jdtls_bundles + 1, jdtls_bundles)
 
   --capabilities ..?
@@ -61,6 +87,7 @@ function M.config()
     init_options = {
       bundles = jdtls_bundles,
       extendedClientCapabilities = {
+        advancedExtractRefactoringSupport = false,
         advancedOrganizeImportsSupport = true,
         executeClientCommandSupport = true,
         generateToStringPromptSupport = true,
@@ -304,6 +331,11 @@ function M.on_attach(event)
     end, bufnr)
   end
   -- NOTE: for some reason this is not a executeCommand but an executeClientCommand :/
+  client.commands['_java.reloadBundles.command'] = function(cmd, ctx)
+    ---@diagnostic disable-next-line: redundant-return-value
+    return {}
+  end
+  -- NOTE: for some reason this is not a executeCommand but an executeClientCommand :/
   client.commands['java.action.organizeImports.chooseImports'] = function(cmd, ctx)
     local file = cmd.arguments[1] --[[@as string]]
     local import_selections = cmd.arguments[2] --[[@as table[]]
@@ -327,6 +359,23 @@ function M.on_attach(event)
     end
     ---@diagnostic disable-next-line: redundant-return-value
     return result
+  end
+  client.commands['java.action.applyRefactoringCommand'] = function(cmd, ctx)
+    local bufnr = ctx.bufnr
+    local params = ctx.params
+    local refactoring_command = cmd.arguments[0] --[[@as string]]
+    client:request('java/getRefactorEdit', {
+      command = cmd.arguments[1],
+      context = params,
+      options = {
+        tabSize = vim.lsp.util.get_effective_tabstop(ctx.bufnr),
+        insertSpaces = vim.bo.expandtab,
+      },
+    }, function(err, res, ctx)
+      if not err and res then
+        vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+      end
+    end, bufnr)
   end
   client.commands['java.action.overrideMethodsPrompt'] = function(cmd, ctx)
     local bufnr = ctx.bufnr
@@ -353,7 +402,6 @@ function M.on_attach(event)
               vim.lsp.util.apply_workspace_edit(res, 'utf-16')
             end
           end, bufnr)
-          print(vim.inspect(selected_methods))
         end
       )
     end, bufnr)
