@@ -14,7 +14,6 @@ function M.config()
   local jdtls_workspace_dir = vim.fn.expand '$HOME/.cache/jdtls/workspace/' .. project_parent .. '/' .. project_name
   local mason_share = vim.fn.expand '$MASON/share'
   local spring_share = vim.fn.expand '$HOME/.local/share/spring/jdtls-extensions/'
-  -- local java_test_plugins = vim.fn.glob(mason_share .. '/java-test/*.jar', true, true)
   local test_bundle_names = {
     'org.eclipse.jdt.junit4.runtime_',
     'org.eclipse.jdt.junit5.runtime_',
@@ -113,7 +112,11 @@ function M.config()
             enabled = true,
           },
           import = {
-            gradle = { enabled = true, annotationProcessing = { enabled = true } },
+            gradle = {
+              enabled = true,
+              wrapper = { enabled = true },
+              annotationProcessing = { enabled = true },
+            },
             maven = { enabled = true },
           },
           implementationsCodeLens = {
@@ -331,6 +334,55 @@ function M.on_attach(event)
     end, bufnr)
   end
   -- NOTE: for some reason this is not a executeCommand but an executeClientCommand :/
+  client.commands['_java.test.askClientForInput'] = function(cmd, ctx)
+    local result = ''
+    -- INPUT IS BLOCKING
+    vim.ui.input({
+      prompt = cmd.arguments[1],
+      default = cmd.arguments[2],
+    }, function(val)
+      print(val)
+      result = val
+    end)
+    ---@diagnostic disable-next-line: redundant-return-value
+    return result
+  end
+  -- NOTE: for some reason this is not a executeCommand but an executeClientCommand :/
+  client.commands['_java.test.askClientForChoice'] = function(cmd, ctx)
+    local co = coroutine.running()
+    local resume = function(val)
+      coroutine.resume(co, val)
+    end
+    if cmd.arguments[3] then
+      ui.select({
+        prompt = cmd.arguments[1] --[[@as string]],
+        index_map = function(arg)
+          return arg.value or arg.label
+        end,
+      }, cmd.arguments[2] --[[@as table]], resume)
+    else
+      vim.ui.select(cmd.arguments[2] --[[@as table]], {
+        prompt = cmd.arguments[1],
+        format_item = function(v)
+          return v.value or v.label
+        end,
+      }, resume)
+    end
+    local ret
+    local result = coroutine.yield(co)
+    -- giuro su dio che questa logica l'ho presa da https://github.com/microsoft/vscode-java-test/blob/main/src/commands/askForOptionCommands.ts#L8
+    -- FA CAGARE
+    if result and (result.value or result.label) then
+      ret = result.value or result.label
+    else
+      ret = vim.tbl_map(function(r)
+        return r.value or r.label
+      end, result)
+    end
+    ---@diagnostic disable-next-line: redundant-return-value
+    return ret
+  end
+  -- NOTE: for some reason this is not a executeCommand but an executeClientCommand :/
   client.commands['_java.reloadBundles.command'] = function(cmd, ctx)
     ---@diagnostic disable-next-line: redundant-return-value
     return {}
@@ -406,6 +458,17 @@ function M.on_attach(event)
       )
     end, bufnr)
   end
+  -- NOTE: could be fun to have like a Java command and a series of subcommands
+  vim.api.nvim_buf_create_user_command(event.buf, 'JavaGenerateTest', function()
+    client:exec_cmd({
+      command = 'vscode.java.test.generateTests',
+      arguments = { vim.uri_from_bufnr(0), 0 },
+    }, {}, function(err, res, ctx)
+      assert(not err, err)
+      assert(res, 'No edit provided')
+      vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+    end)
+  end, {})
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
     client:exec_cmd({
       command = 'vscode.java.resolveMainClass',

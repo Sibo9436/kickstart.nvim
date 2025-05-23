@@ -1,18 +1,10 @@
 -- TODO: this needs a huge refactoring
 local lib = require 'neotest.lib'
+local util = require 'custom.jdtls.utils'
 ---@type neotest.Adapter
 local M = {
   name = 'jdtls',
 }
-
----@return vim.lsp.Client | nil
-local function get_jdtls_client()
-  local jdtls_client = vim.lsp.get_clients { name = 'jdtls' }
-  if not jdtls_client or #jdtls_client == 0 then
-    return nil
-  end
-  return jdtls_client[1]
-end
 
 ---Find the project root directory given a current directory to work from.
 ---Should no root be found, the adapter can still be used in a non-project context if a test file matches.
@@ -21,11 +13,7 @@ end
 ---@return string | nil @Absolute root dir of test suite
 ---@diagnostic disable-next-line: unused-local
 function M.root(dir)
-  local jdtls_client = get_jdtls_client()
-  if not jdtls_client then
-    return nil
-  end
-  return jdtls_client.root_dir
+  return util.get_client()._client.root_dir
 end
 
 ---Filter directories when searching for test files
@@ -47,22 +35,13 @@ function M.is_test_file(file_path)
   if string.find(file_path, '.java') == nil then
     return false
   end
-  local jdtls_client = get_jdtls_client()
-  if not jdtls_client then
-    return false
-  end
-  local result, t_err = jdtls_client:request_sync('workspace/executeCommand', {
-    command = 'java.project.isTestFile',
-    arguments = { vim.uri_from_fname(file_path) },
-  })
-  if t_err or result == nil or result.err ~= nil then
-    return false
-  end
-  return result.result
+  return util.get_client():is_test_file(file_path)
 end
 
 --- Converts from jdtls/lsp range to neotest range
-function convert_range(range)
+---@param range table
+---@return Range4
+local function convert_range(range)
   return { range.start.line, range.start.character, range['end'].line, range['end'].character }
 end
 
@@ -72,20 +51,7 @@ end
 ---@return neotest.Tree | nil
 function M.discover_positions(file_path)
   -- print('called discover positions with ' .. file_path)
-  local jdtls_client = get_jdtls_client()
-  if not jdtls_client then
-    return nil
-  end
-  -- sta scoperta di request_sync e' assurda
-  local test_methods_response = jdtls_client:request_sync(
-    'workspace/executeCommand',
-    { command = 'vscode.java.test.findTestTypesAndMethods', arguments = { vim.uri_from_fname(file_path) } }
-  )
-  if not test_methods_response or test_methods_response.err ~= nil or test_methods_response.result == nil then
-    vim.notify('Failure while parsing testfile ', vim.log.levels.DEBUG)
-    return nil
-  end
-  local test_methods = test_methods_response.result[1]
+  local test_methods = util.get_client():find_test_methods(file_path)[1]
   local nodes = {
     {
       type = 'file',
@@ -110,9 +76,7 @@ end
 
 ---@param args neotest.RunArgs
 ---@return nil | neotest.RunSpec | neotest.RunSpec[]
---NOTE: for now only support gradle
--- plan is to have different strategies like gradle/maven/junit
-function M.build_spec(args)
+local function build_spec(args)
   local tree = args.tree
   local data = tree:data()
   if data.type == 'dir' then
@@ -134,6 +98,7 @@ function M.build_spec(args)
       env = {},
       cwd = vim.fn.getcwd(),
       --@field context? table Arbitrary data to preserve state between running and result collection
+      context = { name = 'gradle' },
       --@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
       --@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
     }
@@ -151,6 +116,7 @@ function M.build_spec(args)
       env = {},
       cwd = vim.fn.getcwd(),
       --@field context? table Arbitrary data to preserve state between running and result collection
+      context = { name = 'gradle' },
       --@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
       --@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
     }
@@ -178,82 +144,162 @@ function M.build_spec(args)
     env = {},
     cwd = vim.fn.getcwd(),
     --@field context? table Arbitrary data to preserve state between running and result collection
+    context = { name = 'gradle' },
     --@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
     --@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
   }
 end
 
+---@class MessageBuffer
+---@field buffer string[]
+---@field is_closed boolean
+local MessageBuffer = {}
+
+function MessageBuffer:new(o)
+  o = o or {
+    buffer = {},
+    is_closed = false,
+  } -- create object if user does not provide one
+  setmetatable(o, self)
+  self.__index = self
+  return o
+end
+
+function MessageBuffer:write(chunk)
+  table.insert(self.buffer, chunk)
+  -- print('DATA:', chunk)
+end
+function MessageBuffer:close()
+  self.is_closed = true
+end
+function MessageBuffer:read()
+  return self.buffer
+end
+
+---@param port integer port number to bind to
+---@param message_buffer MessageBuffer
+local function open_local_socket(port, message_buffer)
+  local server = vim.uv.new_tcp()
+  assert(server ~= nil, 'Could not listen on', port)
+  server:bind('127.0.0.1', port)
+  server:listen(128, function(err)
+    assert(not err, err)
+    local client = vim.uv.new_tcp()
+    assert(client ~= nil)
+    server:accept(client)
+    client:read_start(function(err, chunk)
+      assert(not err, err)
+      if chunk then
+        message_buffer:write(chunk)
+      else
+        message_buffer:close()
+        client:shutdown()
+        client:close()
+        server:close()
+      end
+    end)
+  end)
+end
+
+---@param args neotest.RunArgs
+---@return nil | neotest.RunSpec | neotest.RunSpec[]
 -- NOTE: this would be glorious
--- function M.build_spec(args)
---   if args.strategy == 'dap' then
---     vim.notify('dap strategy not supported yet', vim.log.levels.ERROR)
---   end
---   local tree = args.tree
---   local data = tree:data()
---   if data.type ~= 'test' then
---     return nil
---   end
---   print(vim.inspect(tree:data()))
---   local custom_data = tree:data().custom_data
---   -- convert node into argument for junit command whatever
---   local argument = {
---     projectName = custom_data.projectName,
---     testLevel = custom_data.testLevel,
---     testKind = custom_data.testKind,
---     -- for now very simple
---     testNames = { custom_data.fullName },
---   }
---   --wow..
---   local arg_json = '{'
---     .. '"projectName":"'
---     .. custom_data.projectName
---     .. '",'
---     .. '"testLevel":'
---     .. custom_data.testLevel
---     .. ','
---     .. '"testKind":'
---     .. custom_data.testKind
---     .. ','
---     .. '"testNames":'
---     .. '['
---     .. '"'
---     .. custom_data.jdtHandler
---     .. '"'
---     .. ']'
---     .. '}'
---   print(arg_json)
---   local jdtls_client = get_jdtls_client()
---   if not jdtls_client then
---     return nil
---   end
---   local result = jdtls_client:request_sync('workspace/executeCommand', {
---     command = 'vscode.java.test.junit.argument',
---     arguments = { arg_json },
---   })
---   if not result or not result.result or result.err ~= nil then
---     vim.notify('Failure while building runspec ' .. vim.inspect(result), vim.log.levels.ERROR)
---     return nil
---   end
---   local response = result.result
---   return {
---     --@field command string[]
---     command = {
---       'java',
---       '-cp',
---       table.concat(response.body.classpath, ':'),
---       table.unpack(response.body.vmArguments),
---       response.body.mainClass,
---       table.unpack(response.body.programArguments),
---     },
---     --@field env? table<string, string>
---     env = {},
---     cwd = response.body.workingDirectory,
---     --@field context? table Arbitrary data to preserve state between running and result collection
---     --@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
---     --@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
---   }
--- end
---
+local function build_spec_dap_junit(args)
+  vim.notify('debugging tests is still not supported', vim.log.levels.ERROR)
+  if args.strategy ~= 'dap' then
+    vim.notify('launching through java-debug only supported via dap', vim.log.levels.ERROR)
+  end
+  local tree = args.tree
+  local data = tree:data()
+  if data.type ~= 'test' then
+    return nil
+  end
+  -- print(vim.inspect(tree:data()))
+  local custom_data = tree:data().custom_data
+  -- convert node into argument for junit command whatever
+  local argument = {
+    projectName = custom_data.projectName,
+    testLevel = custom_data.testLevel,
+    testKind = custom_data.testKind,
+    -- for now very simple
+    testNames = { custom_data.fullName },
+  }
+  --wow..
+  local arg_json = '{'
+    .. '"projectName":"'
+    .. custom_data.projectName
+    .. '",'
+    .. '"testLevel":'
+    .. custom_data.testLevel
+    .. ','
+    .. '"testKind":'
+    .. custom_data.testKind
+    .. ','
+    .. '"testNames":'
+    .. '['
+    .. '"'
+    .. custom_data.jdtHandler
+    .. '"'
+    .. ']'
+    .. '}'
+
+  --- TODO: migrate to utils?
+  local jdtls_client = util.get_client()
+  jdtls_client:build_workspace()
+  local result = jdtls_client._client:request_sync('workspace/executeCommand', {
+    command = 'vscode.java.test.junit.argument',
+    arguments = { arg_json },
+  })
+  if not result or not result.result or result.err ~= nil then
+    vim.notify('Failure while building runspec ' .. vim.inspect(result), vim.log.levels.ERROR)
+    return nil
+  end
+  local response = result.result
+  local port = ''
+  for idx, val in ipairs(response.body.programArguments) do
+    if val == '-port' then
+      port = response.body.programArguments[idx + 1]
+      break
+    end
+  end
+  -- print('will listen on port', port)
+  local spec = {
+    --@field command string[]
+    strategy = {
+      name = ('Launch test: %s'):format(tree:data().name),
+      type = 'java',
+      request = 'launch',
+      projectName = response.body.projectName,
+      vmArgs = table.concat(response.body.vmArguments, ' '),
+      cwd = response.body.workingDirectory,
+      classPaths = response.body.classpath,
+      mainClass = response.body.mainClass,
+      args = table.concat(response.body.programArguments, ' '),
+    },
+    --@field env? table<string, string>
+    env = {},
+    cwd = response.body.workingDirectory,
+    --@field context? table Arbitrary data to preserve state between running and result collection
+    context = { name = 'java', message_buffer = MessageBuffer:new() },
+    --@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
+    --@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
+  }
+
+  open_local_socket(math.floor(tonumber(port) or 0), spec.context.message_buffer)
+  -- print(vim.inspect(spec))
+  return spec
+end
+
+---@param args neotest.RunArgs
+---@return nil | neotest.RunSpec | neotest.RunSpec[]
+--NOTE: for now only support gradle
+-- plan is to have different "strategies" like gradle/maven/junit
+function M.build_spec(args)
+  if args.strategy == 'dap' then
+    return build_spec_dap_junit(args)
+  end
+  return build_spec(args)
+end
 
 --- Get error information for failed tests
 local function find_next_emtpy_line(lines)
@@ -318,6 +364,18 @@ end
 ---@param tree neotest.Tree
 ---@return table<string, neotest.Result>
 function M.results(spec, result, tree)
+  if spec.context.name == 'java' then
+    -- print(vim.inspect(spec.context))
+    return {
+      [tree:data().id] = {
+        status = 'failed',
+        short = table.concat(spec.context.message_buffer:read()),
+      },
+    }
+  end
+  if spec.context.name ~= 'gradle' then
+    return { [tree:data().id] = { status = 'failed' } }
+  end
   local r = {}
   -- print(vim.inspect(tree:root()))
   -- vim.notify(vim.inspect(spec), vim.log.levels.INFO)

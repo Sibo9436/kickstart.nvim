@@ -115,6 +115,52 @@ return {
       },
     }
 
+    local jdtls = require 'custom.jdtls.utils'
+    local launch_local_config = setmetatable({
+      type = 'java',
+      request = 'launch',
+      name = 'Debug - Local',
+    }, {
+      __call = function()
+        local jdtls_client = jdtls.get_client()
+        jdtls_client:build_workspace_sync()
+        local mc = jdtls_client:resolve_main_class()
+        local ws = jdtls_client._client.workspace_folders and jdtls_client._client.workspace_folders[1].name or nil
+        return {
+          type = 'java',
+          request = 'launch',
+          name = 'Debug - Local',
+          mainClass = mc.main_class,
+          -- todo: one call only, please
+          projectName = mc.project_name,
+          classPaths = jdtls_client:resolve_java_classpath(mc)[2],
+          -- modulePaths = resolve_java_classpath()[1],
+          javaExec = jdtls_client:resolve_java_executable(mc),
+          cwd = ws,
+        }
+      end,
+    })
+    dap.configurations.java = {
+      launch_local_config,
+      {
+        type = 'java',
+        request = 'attach',
+        name = 'Debug - Attach',
+        hostName = '127.0.0.1',
+        port = 5005,
+      },
+    }
+
+    dap.adapters.java = function(callback)
+      local res = jdtls.get_client()._client:request_sync('workspace/executeCommand', { command = 'vscode.java.startDebugSession' })
+      if res == nil or res.err ~= nil then
+        -- NOTE: maybe notify
+        return
+      end
+      local port = res.result
+      callback { type = 'server', host = '127.0.0.1', port = port }
+    end
+
     -- Dap UI setup
     -- For more information, see |:help nvim-dap-ui|
     dapui.setup {
@@ -138,16 +184,16 @@ return {
     }
 
     -- Change breakpoint icons
-    -- vim.api.nvim_set_hl(0, 'DapBreak', { fg = '#e51400' })
-    -- vim.api.nvim_set_hl(0, 'DapStop', { fg = '#ffcc00' })
-    -- local breakpoint_icons = vim.g.have_nerd_font
-    --     and { Breakpoint = '', BreakpointCondition = '', BreakpointRejected = '', LogPoint = '', Stopped = '' }
-    --   or { Breakpoint = '●', BreakpointCondition = '⊜', BreakpointRejected = '⊘', LogPoint = '◆', Stopped = '⭔' }
-    -- for type, icon in pairs(breakpoint_icons) do
-    --   local tp = 'Dap' .. type
-    --   local hl = (type == 'Stopped') and 'DapStop' or 'DapBreak'
-    --   vim.fn.sign_define(tp, { text = icon, texthl = hl, numhl = hl })
-    -- end
+    vim.api.nvim_set_hl(0, 'DapBreak', { link = 'Error' })
+    vim.api.nvim_set_hl(0, 'DapStop', { link = 'WarningMsg' })
+    local breakpoint_icons = vim.g.have_nerd_font
+        and { Breakpoint = '', BreakpointCondition = '', BreakpointRejected = '', LogPoint = '', Stopped = '' }
+      or { Breakpoint = '●', BreakpointCondition = '⊜', BreakpointRejected = '⊘', LogPoint = '◆', Stopped = '⭔' }
+    for type, icon in pairs(breakpoint_icons) do
+      local tp = 'Dap' .. type
+      local hl = (type == 'Stopped') and 'DapStop' or 'DapBreak'
+      vim.fn.sign_define(tp, { text = icon, texthl = hl, numhl = hl })
+    end
 
     dap.listeners.after.event_initialized['dapui_config'] = dapui.open
     dap.listeners.before.event_terminated['dapui_config'] = dapui.close

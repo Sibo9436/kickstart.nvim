@@ -115,6 +115,9 @@ M.select = function(opts, values, cb)
   local toggle_sel_move_up = function()
     toggle_sel(true)
   end
+  -- oddioo...???
+  -- non molto elegante ma impedisce di chiamare il cb due volte...
+  local cb_called = false
   local end_sel = function()
     local v = {}
     for idx, s in ipairs(sel) do
@@ -122,8 +125,9 @@ M.select = function(opts, values, cb)
         table.insert(v, values[idx])
       end
     end
-    vim.api.nvim_win_close(win, true)
     cb(v)
+    cb_called = true
+    vim.api.nvim_win_close(win, true)
   end
   vim.api.nvim_create_autocmd('WinLeave', {
     buffer = buf,
@@ -131,7 +135,9 @@ M.select = function(opts, values, cb)
       -- NOTE: non sono sicuro se chiamare il cb o meno in caso di uscita senza selezione
       -- pero la logica e' che se poi certo di sincronizzare l'api e non chiamo il cb
       -- blocco una coroutine per sempre
-      cb(nil)
+      if not cb_called then
+        cb(nil)
+      end
       if vim.api.nvim_win_is_valid(win) then
         vim.api.nvim_win_close(win, true)
       end
