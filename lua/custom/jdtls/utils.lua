@@ -46,10 +46,43 @@ function M.get_client(bufnr)
   return JdtlsClient:new(clients[1])
 end
 
---- Resolves current main class and project name
----@return {main_class: string, project_name: string}
-function JdtlsClient:resolve_main_class()
+--- Resolves main classes
+---@return {main_class: string, project_name: string}[]
+function JdtlsClient:resolve_main_classes()
   local res = self._client:request_sync('workspace/executeCommand', { command = 'vscode.java.resolveMainClass', arguments = {} })
+  assert(res, 'Jdtls did not respond')
+  assert(res.result, res.err)
+  assert(res.result[1], 'No main class found')
+  return vim.tbl_map(function(mc)
+    return {
+      main_class = mc.mainClass,
+      project_name = mc.projectName,
+    }
+  end, res.result)
+end
+
+--- Resolves current main class and project name
+--- @param file_path string?
+---@return {main_class: string, project_name: string}
+function JdtlsClient:resolve_main_class(file_path)
+  local arguments = {}
+  if file_path then
+    local res = self._client:request_sync('workspace/executeCommand', { command = 'java.project.getAll', arguments = {} })
+    assert(res, 'Jdtls did not respond')
+    assert(res.result, res.err)
+    assert(res.result[1], 'No project found')
+    local file_uri = vim.uri_from_fname(file_path)
+    local all_projects = res.result
+    for _, proj in ipairs(all_projects) do
+      local p = string.sub(proj, 7)
+      local part = string.sub(file_uri, 9, 8 + string.len(p))
+      if p == part then
+        print('resolve main class matched', p)
+        arguments = { proj }
+      end
+    end
+  end
+  local res = self._client:request_sync('workspace/executeCommand', { command = 'vscode.java.resolveMainClass', arguments = arguments })
   assert(res, 'Jdtls did not respond')
   assert(res.result, res.err)
   assert(res.result[1], 'No main class found')
@@ -103,7 +136,9 @@ function JdtlsClient:is_test_file(file_path)
   })
   assert(not t_err, 'Request timed out')
   assert(result, 'No response given')
-  assert(result.err == nil, result.err)
+  if result.err ~= nil then
+    return false
+  end
   return result.result
 end
 

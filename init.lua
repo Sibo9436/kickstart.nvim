@@ -1047,10 +1047,11 @@ require('lazy').setup({
       },
       indent = { enable = true, disable = { 'ruby' } },
     },
-    config = function()
+    init = function()
       vim.opt.foldmethod = 'expr'
-      vim.opt.foldenable = false
       vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
+      vim.wo.foldtext = ''
+      vim.opt.foldenable = false
     end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:

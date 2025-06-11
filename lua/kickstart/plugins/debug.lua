@@ -116,40 +116,50 @@ return {
     }
 
     local jdtls = require 'custom.jdtls.utils'
-    local launch_local_config = setmetatable({
-      type = 'java',
-      request = 'launch',
-      name = 'Debug - Local',
-    }, {
-      __call = function()
-        local jdtls_client = jdtls.get_client()
-        jdtls_client:build_workspace_sync()
-        local mc = jdtls_client:resolve_main_class()
-        local ws = jdtls_client._client.workspace_folders and jdtls_client._client.workspace_folders[1].name or nil
-        return {
-          type = 'java',
-          request = 'launch',
-          name = 'Debug - Local',
-          mainClass = mc.main_class,
-          -- todo: one call only, please
-          projectName = mc.project_name,
-          classPaths = jdtls_client:resolve_java_classpath(mc)[2],
-          -- modulePaths = resolve_java_classpath()[1],
-          javaExec = jdtls_client:resolve_java_executable(mc),
-          cwd = ws,
-        }
-      end,
-    })
-    dap.configurations.java = {
-      launch_local_config,
-      {
+    local main_classes = jdtls.get_client():resolve_main_classes()
+    local launch_local_config = {}
+    print('Found', #main_classes, 'main classes')
+    for _, mc in ipairs(main_classes) do
+      -- print('setting metatable for ', mc.project_name)
+      local v = setmetatable({
+        type = 'java',
+        request = 'launch',
+        name = 'Debug - ' .. mc.project_name,
+      }, {
+        __call = function()
+          local jdtls_client = jdtls.get_client()
+          jdtls_client:build_workspace_sync()
+          local ws = jdtls_client._client.workspace_folders and jdtls_client._client.workspace_folders[1].name or nil
+          return {
+            type = 'java',
+            request = 'launch',
+            name = 'Debug - ' .. mc.project_name,
+            mainClass = mc.main_class,
+            -- todo: one call only, please
+            projectName = mc.project_name,
+            classPaths = jdtls_client:resolve_java_classpath(mc)[2],
+            -- modulePaths = resolve_java_classpath()[1],
+            javaExec = jdtls_client:resolve_java_executable(mc),
+            cwd = ws,
+          }
+        end,
+      })
+      table.insert(launch_local_config, v)
+      table.insert(launch_local_config, {
         type = 'java',
         request = 'attach',
-        name = 'Debug - Attach',
+        name = 'Debug - Attach ' .. mc.project_name,
         hostName = '127.0.0.1',
         port = 5005,
-      },
-    }
+        projectName = mc.project_name,
+      })
+    end
+    dap.configurations.java = {}
+    print('Loading dap config', #dap.configurations.java)
+    for _, conf in ipairs(launch_local_config) do
+      table.insert(dap.configurations.java, conf)
+    end
+    print('Loading dap config', #dap.configurations.java)
 
     dap.adapters.java = function(callback)
       local res = jdtls.get_client()._client:request_sync('workspace/executeCommand', { command = 'vscode.java.startDebugSession' })

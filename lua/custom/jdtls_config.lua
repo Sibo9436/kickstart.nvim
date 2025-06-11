@@ -15,6 +15,7 @@ function M.config()
   local mason_share = vim.fn.expand '$MASON/share'
   local spring_share = vim.fn.expand '$HOME/.local/share/spring/jdtls-extensions/'
   local test_bundle_names = {
+    'com.microsoft.java.test.plugin-',
     'org.eclipse.jdt.junit4.runtime_',
     'org.eclipse.jdt.junit5.runtime_',
     'junit-jupiter-api',
@@ -35,13 +36,17 @@ function M.config()
   }
   local java_test_plugins = vim.tbl_map(function(test_bundle_name)
     --only return a string, hopefully we're only matching one file
-    vim.fn.glob(mason_share .. '/java-test/' .. test_bundle_name .. '*.jar', true, false)
+    return vim.fn.glob(mason_share .. '/java-test/' .. test_bundle_name .. '*.jar', true, false)
   end, test_bundle_names)
   local java_debug_bundles = vim.fn.glob(mason_share .. '/java-debug-adapter/*.jar', true, true)
   local spring_tools_bundles = vim.fn.glob(spring_share .. '*.jar', true, true)
+  spring_tools_bundles = vim.tbl_filter(function(bundle)
+    local is_ext = string.find(bundle, 'xml-ls-extension.jar') or string.find(bundle, 'commons-lsp-extensions.jar')
+    return is_ext == nil
+  end, spring_tools_bundles)
   local jdtls_bundles = {}
-  table.move(java_debug_bundles, 1, #java_debug_bundles, #jdtls_bundles + 1, jdtls_bundles)
   table.move(java_test_plugins, 1, #java_test_plugins, #jdtls_bundles + 1, jdtls_bundles)
+  table.move(java_debug_bundles, 1, #java_debug_bundles, #jdtls_bundles + 1, jdtls_bundles)
   table.move(spring_tools_bundles, 1, #spring_tools_bundles, #jdtls_bundles + 1, jdtls_bundles)
 
   --capabilities ..?
@@ -54,7 +59,7 @@ function M.config()
     },
   })
   return {
-    filetypes = { 'java', 'yaml', 'properties' },
+    filetypes = { 'java' },
     cmd = {
       'jdtls',
       '-Xmx1G',
@@ -63,9 +68,10 @@ function M.config()
       '-XX:+ZGenerational',
       '-XX:+UseStringDeduplication',
       '-configuration',
-      vim.fn.expand '$HOME/.cache/jdtls/config',
+      vim.fn.expand '$MASON/share/jdtls/config/arm',
       '-data',
       jdtls_workspace_dir,
+      '--jvm-arg=-Dlog.level=ALL',
       '--jvm-arg=-Declipse.application=org.eclipse.jdt.ls.core.id1',
       '--jvm-arg=-Dosgi.bundles.defaultStartLevel=4',
       '--jvm-arg=-Declipse.product=org.eclipse.jdt.ls.core.product',
@@ -82,6 +88,7 @@ function M.config()
       'jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED',
       '--Amapstruct.verbose=true',
     },
+    workspace = jdtls_workspace_dir,
     capabilities = capabilities,
     init_options = {
       bundles = jdtls_bundles,
@@ -155,7 +162,7 @@ function M.config()
               -- 'org.junit.jupiter.api.Assumptions.*',
               -- 'org.junit.jupiter.api.DynamicContainer.*',
               -- 'org.junit.jupiter.api.DynamicTest.*',
-              'org.assertj.core.api.Assertions.*',
+              -- 'org.assertj.core.api.Assertions.*',
               'org.assertj.core.api.Assertions.*',
               'org.mockito.Mockito.*',
             },
