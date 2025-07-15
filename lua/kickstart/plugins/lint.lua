@@ -6,12 +6,13 @@ return {
     config = function()
       local lint = require 'lint'
       require('lint.linters.checkstyle').config_file = vim.fn.getcwd() .. '/codestyle/checkstyle/checkstyle.xml'
+      require('lint.linters.pmd').rulesets = vim.fn.getcwd() .. '/codestyle/pmd/ruleset.xml'
 
       lint.linters_by_ft = {
         markdown = { 'markdownlint' },
         typescriptreact = { 'eslint_d' }, --, 'stylelint' },
         typescript = { 'eslint_d' }, --, 'stylelint' },
-        java = { 'checkstyle' },
+        java = { 'checkstyle', 'pmd' },
       }
 
       -- To allow other plugins to add linters to require('lint').linters_by_ft,

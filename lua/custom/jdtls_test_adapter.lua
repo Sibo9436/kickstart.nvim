@@ -74,6 +74,14 @@ function M.discover_positions(file_path)
   return lib.positions.parse_tree(nodes, {})
 end
 
+local function resolve_gradle_project_name(projectName)
+  if #util.get_client():get_all_projects() > 1 then
+    return projectName
+  else
+    return ''
+  end
+end
+
 ---@param args neotest.RunArgs
 ---@return nil | neotest.RunSpec | neotest.RunSpec[]
 local function build_spec(args)
@@ -91,7 +99,7 @@ local function build_spec(args)
     return {
       command = {
         args.tree:root():data().path .. '/gradlew',
-        'test',
+        data.custom_data and data.custom_data.projectName and resolve_gradle_project_name(data.custom_data.projectName) .. ':test' or 'test',
         table.unpack(filenames),
       },
       --@field env? table<string, string>
@@ -108,7 +116,7 @@ local function build_spec(args)
     return {
       command = {
         args.tree:root():data().path .. '/gradlew',
-        'test',
+        data.custom_data and data.custom_data.projectName and resolve_gradle_project_name(data.custom_data.projectName) .. ':test' or 'test',
         '--tests',
         classname,
       },
@@ -136,7 +144,7 @@ local function build_spec(args)
   return {
     command = {
       args.tree:root():data().path .. '/gradlew',
-      'test',
+      resolve_gradle_project_name(data.custom_data.projectName) .. ':test',
       '--tests',
       fullname,
     },
@@ -313,6 +321,31 @@ local function find_next_emtpy_line(lines)
   return result
 end
 
+-- sarebbe ancora meglio utilizzare il bytecode di gradle ma magari in futuro
+--- Retrieve test results from xml
+--- expects a settings.gradle
+---
+---@param test_full_names string[]
+local function parse_xml_gradle_results(test_full_names)
+  -- check if build directory is standard
+  local builddir = 'build'
+  if not vim.fn.isdirectory(builddir) then
+    -- call
+    local output = vim.fn.system('./gradlew', 'properties')
+    local s, _, match = output:find 'buildDir: (.*)'
+    assert(s, 'No buildDir found for gradle')
+    builddir = match
+  end
+  local test_dir = builddir .. '/test-results/test'
+  print(test_dir)
+  for id, fullname in pairs(test_full_names) do
+    fullname, _ = fullname:gsub('#.*', '')
+    print(fullname)
+    local content = lib.xml.parse(lib.files.read(test_dir .. '/TEST-' .. fullname .. '.xml'))
+    print(vim.inspect(content))
+  end
+end
+
 --- Retrieve results of specified tests from gradle output
 ---@alias testid string
 ---@param filepath string the gradle output file
@@ -320,7 +353,9 @@ end
 ---@return table<testid, {line: string, status: string, ctx: any}>
 -- NOTE: viene fuori che neotest ha una libreria per parsing xml quindi potrebbe essere carino
 -- recuperare le info dall'xml di gradle
-local function parse_gradle_test_result(filepath, test_names)
+local function parse_gradle_test_result(filepath, test_names, test_full_names)
+  -- TODO: Still in wip, now I have to work though
+  -- parse_xml_gradle_results(test_full_names)
   --- NOTE: shoud split file reading and parsing imho
   local lines = lib.files.read_lines(filepath)
   local test_lines = {}
@@ -390,7 +425,14 @@ function M.results(spec, result, tree)
       test_names[node:data().id] = lastfile .. ' > ' .. node:data().name
     end
   end
-  local parse_result = parse_gradle_test_result(result.output, test_names)
+  local test_full_names = {}
+  for _, node in tree:iter_nodes() do
+    if node:data().type == 'test' then
+      test_full_names[node:data().id] = node:data().custom_data.fullName
+    end
+  end
+  -- print(vim.inspect(test_full_names))
+  local parse_result = parse_gradle_test_result(result.output, test_names, test_full_names)
   if rawequal(next(parse_result), nil) and result.code ~= 0 then
     r[tree:data().id] = { status = 'failed' }
     return r

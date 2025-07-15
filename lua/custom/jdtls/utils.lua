@@ -61,6 +61,15 @@ function JdtlsClient:resolve_main_classes()
   end, res.result)
 end
 
+--- Exposes interal request_sync
+---@param method string
+---@param params table
+---@param timeout_ms integer?
+---@param bufnr integer?
+function JdtlsClient:request_sync(method, params, timeout_ms, bufnr)
+  self._client:request_sync(method, params, timeout_ms, bufnr)
+end
+
 --- Resolves current main class and project name
 --- @param file_path string?
 ---@return {main_class: string, project_name: string}
@@ -177,6 +186,15 @@ function JdtlsClient:resolve_java_executable(mc)
     command = 'vscode.java.resolveJavaExecutable',
     arguments = { mclass.main_class, mclass.project_name },
   })
+  assert(res, 'Jdtls did not respond')
+  assert(res.err == nil, res.err)
+  return res.result
+end
+
+---Get all java projects in workspace
+---@return string[] -- filepaths to projects
+function JdtlsClient:get_all_projects()
+  local res = self._client:request_sync('workspace/executeCommand', { command = 'java.project.getAll', arguments = {} })
   assert(res, 'Jdtls did not respond')
   assert(res.err == nil, res.err)
   return res.result

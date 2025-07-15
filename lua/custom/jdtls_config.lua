@@ -61,14 +61,17 @@ function M.config()
   return {
     filetypes = { 'java' },
     cmd = {
-      'jdtls',
+      -- NOTE: temporarily using an older version cause of a huge lombok fuckup
+      -- 'jdtls',
+      vim.fn.expand '$HOME/.local/share/nvim/jdtls/bin/jdtls',
       '-Xmx1G',
       -- '-XX:+UseG1GC',
       '-XX:+UseZGC',
       '-XX:+ZGenerational',
       '-XX:+UseStringDeduplication',
       '-configuration',
-      vim.fn.expand '$MASON/share/jdtls/config/arm',
+      -- vim.fn.expand '$MASON/share/jdtls/config/arm',
+      vim.fn.expand '$HOME/.local/share/nvim/jdtls/config_mac_arm/',
       '-data',
       jdtls_workspace_dir,
       '--jvm-arg=-Dlog.level=ALL',
@@ -100,15 +103,17 @@ function M.config()
         generateConstructorsPromptSupport = true,
         generateDelegateMethodsPromptSupport = true,
         overrideMethodsPromptSupport = true,
+        classFileContentsSupport = true,
       },
       settings = {
         java = {
-          home = '/opt/homebrew/Cellar/openjdk/23.0.2/libexec/openjdk.jdk/Contents/Home',
+          home = '/opt/homebrew/Cellar/openjdk/24.0.1/libexec/openjdk.jdk/Contents/Home',
           inlayHints = { uparameterNames = { enabled = 'literals' } },
           maven = { downloadSources = true },
           eclipse = { downloadSources = true },
           references = { includeDecompiledSources = true },
           saveActions = { organizeImports = true },
+          memberSortOrder = 'SF,SI,F,I,C,SM,M,T',
           contentProvider = {
             preferred = 'fernflowerContentProvider',
           },
@@ -162,7 +167,6 @@ function M.config()
               -- 'org.junit.jupiter.api.Assumptions.*',
               -- 'org.junit.jupiter.api.DynamicContainer.*',
               -- 'org.junit.jupiter.api.DynamicTest.*',
-              -- 'org.assertj.core.api.Assertions.*',
               'org.assertj.core.api.Assertions.*',
               'org.mockito.Mockito.*',
             },
@@ -494,6 +498,30 @@ function M.on_attach(event)
       end
     end)
   end, {})
+  -- Create an autocommand to catch 'jdt://' URIs
+  vim.api.nvim_create_autocmd({ 'BufReadCmd', 'BufNewFile' }, {
+    group = vim.api.nvim_create_augroup('jdtls', { clear = false }),
+    pattern = 'jdt://*',
+    callback = function(args)
+      -- handle_jdtls_uri(args.match)
+
+      -- If you don't want Neovim to look for a real file, you can set a scratch buffer:
+      vim.bo[args.buf].buftype = 'nofile'
+      vim.bo[args.buf].bufhidden = 'hide'
+      vim.bo[args.buf].swapfile = false
+      vim.bo[args.buf].filetype = 'java'
+      local result = client:request_sync('java/classFileContents', { uri = args.file })
+      assert(result, 'Jdtls did not respond')
+      assert(result.result, result.err)
+      vim.api.nvim_buf_set_lines(args.buf, 0, -1, false, vim.split(result.result, '\n'))
+      vim.lsp.start(vim.lsp.config['jdtls'], {
+        bufnr = args.buf,
+        reuse_client = vim.lsp.config['jdtls'].reuse_client,
+        _root_markers = vim.lsp.config['jdtls'].root_markers,
+      })
+    end,
+  })
+
   -- NOTE: I don't love this here but let's see
 
   -- TODO: I think this should be removed
@@ -502,6 +530,7 @@ function M.on_attach(event)
   if #clients > 0 then
     return
   end
+
   -- if no springboot_ls client has been found register it
   vim.lsp.enable 'springboot_ls'
   vim.lsp.start(vim.lsp.config['springboot_ls'], {

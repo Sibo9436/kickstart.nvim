@@ -174,6 +174,11 @@ vim.o.confirm = true
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
 -- Diagnostic keymaps
+vim.diagnostic.config {
+  float = {
+    source = 'if_many',
+  },
+}
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 vim.keymap.set('n', '<leader>cd', vim.diagnostic.open_float, { desc = 'Hover [C]ode [D]iagnostic' })
 
@@ -556,6 +561,14 @@ require('lazy').setup({
           map('K', function()
             vim.lsp.buf.hover { border = 'rounded', max_width = 90 }
           end, 'Hover')
+          --fix border colors
+          vim.api.nvim_set_hl(0, 'NormalFloat', { link = 'FloatBorder' }) -- makes borders match background
+          vim.api.nvim_create_autocmd('ColorScheme', {
+            group = vim.api.nvim_create_augroup('kickstart-lsp-attach', { clear = false }),
+            callback = function(ev)
+              vim.api.nvim_set_hl(0, 'NormalFloat', { link = 'FloatBorder' }) -- makes borders match background
+            end,
+          })
 
           -- Rename the variable under your cursor.
           --  Most Language Servers support renaming across files, etc.
@@ -890,11 +903,9 @@ require('lazy').setup({
         --
         -- See :h blink-cmp-config-keymap for defining your own keymap
         preset = 'default',
-
         -- For more advanced Luasnip keymaps (e.g. selecting choice nodes, expansion) see:
         --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
       },
-
       appearance = {
         -- 'mono' (default) for 'Nerd Font Mono' or 'normal' for 'Nerd Font'
         -- Adjusts spacing to ensure icons are aligned
@@ -958,6 +969,23 @@ require('lazy').setup({
     priority = 1000,
     config = function()
       vim.cmd.colorscheme 'catppuccin-frappe'
+    end,
+  },
+  {
+    'zenbones-theme/zenbones.nvim',
+    name = 'zenbones',
+    dependencies = 'rktjmp/lush.nvim',
+    lazy = false,
+    priority = 1001,
+    config = function()
+      vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PMenuSel' })
+      vim.api.nvim_create_autocmd('ColorScheme', {
+        group = vim.api.nvim_create_augroup('sibo-colo', { clear = true }),
+        pattern = { 'zenbones', 'nordbones' },
+        callback = function(ev)
+          vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PMenuSel' })
+        end,
+      })
     end,
   },
   {
@@ -1038,6 +1066,9 @@ require('lazy').setup({
       ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
       -- Autoinstall languages that are not installed
       auto_install = true,
+      incremental_selection = {
+        enable = true,
+      },
       highlight = {
         enable = true,
         -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
@@ -1052,6 +1083,18 @@ require('lazy').setup({
       vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
       vim.wo.foldtext = ''
       vim.opt.foldenable = false
+      -- Install crisp parser
+      local parser_config = require('nvim-treesitter.parsers').get_parser_configs()
+      parser_config.crisp = {
+        install_info = {
+          url = '~/personal/git/tree-sitter-crisp',
+          files = { 'src/parser.c' },
+          branch = 'main',
+          generate_requires_npm = false,
+          requires_generate_from_grammar = false,
+        },
+        filetype = 'crisp',
+      }
     end,
     -- There are additional nvim-treesitter modules that you can use to interact
     -- with nvim-treesitter. You should go explore a few and see what interests you:
@@ -1074,7 +1117,7 @@ require('lazy').setup({
   -- require 'kickstart.plugins.indent_line',
   require 'kickstart.plugins.lint',
   require 'kickstart.plugins.autopairs',
-  require 'kickstart.plugins.neo-tree',
+  -- require 'kickstart.plugins.neo-tree',
   require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
@@ -1110,11 +1153,21 @@ require('lazy').setup({
 })
 
 -- Netrw configuration (even though I'll be trying neo-tree for a while)
+-- after a while I didn't love it, I now want to try oil, but maybe I want a combo of oil and neo-tree...?
 vim.g.netrw_liststyle = 3
 vim.g.netrw_preview = 1
 vim.g.netrw_winsize = 30
 vim.g.netrw_keepdir = 0
 vim.g.netrw_banner = 0
+vim.filetype.add {
+  extension = {
+    crisp = 'crisp',
+  },
+  filename = {
+    ['Crisp'] = 'crisp',
+  },
+}
 
+require('custom.pr_commenst').setup()
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
