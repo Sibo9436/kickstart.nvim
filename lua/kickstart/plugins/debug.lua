@@ -116,7 +116,18 @@ return {
     }
 
     local jdtls = require 'custom.jdtls.utils'
-    local main_classes = jdtls.get_client():resolve_main_classes()
+    local j_client = jdtls.get_client_opt()
+    if j_client then
+      local repl = require 'dap.repl'
+      repl.commands = vim.tbl_extend('force', repl.commands, {
+        custom_commands = {
+          ['.json'] = function(text)
+            repl.execute(string.format('new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(%s) ', text))
+          end,
+        },
+      })
+    end
+    local main_classes = j_client and j_client:resolve_main_classes() or {}
     local launch_local_config = {}
     print('Found', #main_classes, 'main classes')
     for _, mc in ipairs(main_classes) do

@@ -28,6 +28,27 @@ function JdtlsClient:new(client)
 end
 
 ---@param bufnr? integer
+---@return JdtlsClient|nil
+function M.get_client_opt(bufnr)
+  local clients = nil
+  if bufnr then
+    clients = vim.lsp.get_clients {
+      bufnr = bufnr,
+      name = 'jdtls',
+    }
+  else
+    clients = vim.lsp.get_clients {
+      name = 'jdtls',
+    }
+  end
+  if not clients or #clients == 0 then
+    return nil
+  end
+  assert(clients, 'No jdtls client found')
+  assert(#clients > 0, 'No jdtls client found')
+  return JdtlsClient:new(clients[1])
+end
+---@param bufnr? integer
 ---@return JdtlsClient
 function M.get_client(bufnr)
   local clients = nil

@@ -180,7 +180,7 @@ function M.config()
           format = {
             enabled = true,
             settings = {
-              url = vim.fn.expand 'file://$HOME/c24_javastyle.xml',
+              url = vim.uri_from_fname(vim.fn.expand '$HOME/c24_javastyle.xml'),
               profile = 'c24-javastyle',
             },
           },
