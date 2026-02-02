@@ -1,6 +1,16 @@
 -- Configuration for spring-tools language server
 local M = {}
 
+local function find_jdtls(bufnr)
+  local buf = bufnr or 0
+  local clients = vim.lsp.get_clients { bufnr = buf, name = 'jdtls' }
+  if #clients == 0 then
+    return nil
+  else
+    return clients[1]
+  end
+end
+
 function M.config()
   -- TODO: Maybe add it to lspconfig.config
   local capabilities = vim.lsp.protocol.make_client_capabilities()
@@ -191,6 +201,22 @@ function M.on_attach(event)
   client.handlers['sts/javaSuperTypes'] = makeStsHandler('sts.java.hierarchy.supertypes', 'sts.java.hierarchy.supertypes')
   client.handlers['sts/javaCodeComplete'] = makeStsHandler('sts.java.code.completions', 'sts.java.code.completions')
   client.handlers['sts/project/gav'] = makeStsHandler('sts.project.gav', 'sts.project.gav')
+
+  -- custom spring commands!
+  vim.api.nvim_buf_create_user_command(0, 'SpringUgradeSpringBoot', function(args)
+    local version = args.fargs[1]
+    local jdtls = find_jdtls()
+    if not jdtls then
+      return
+    end
+    client:exec_cmd({ command = 'sts/upgrade/spring-boot', arguments = { vim.uri_from_fname(jdtls.root_dir), version, true } }, {}, function(err, res, ctx)
+      if err then
+        vim.notify('Could not upgrade spring boot to version: ' .. version .. ' ' .. err.message, vim.log.levels.ERROR, {})
+      else
+        vim.notify('Successfully upgraded spring boot to ' .. version, vim.log.levels.INFO, {})
+      end
+    end)
+  end, { nargs = 1 })
 end
 
 return M

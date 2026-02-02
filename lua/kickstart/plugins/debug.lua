@@ -139,6 +139,7 @@ return {
             projectName = mc.project_name,
             classPaths = jdtls_client:resolve_java_classpath(mc)[2],
             -- modulePaths = resolve_java_classpath()[1],
+            args = '--spring.profiles.active=billow,local',
             javaExec = jdtls_client:resolve_java_executable(mc),
             cwd = ws,
           }

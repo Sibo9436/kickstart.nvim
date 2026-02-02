@@ -61,17 +61,17 @@ function M.config()
   return {
     filetypes = { 'java' },
     cmd = {
+      'jdtls',
       -- NOTE: temporarily using an older version cause of a huge lombok fuckup
-      -- 'jdtls',
-      vim.fn.expand '$HOME/.local/share/nvim/jdtls/bin/jdtls',
+      -- vim.fn.expand '$HOME/.local/share/nvim/jdtls/bin/jdtls',
       '-Xmx1G',
       -- '-XX:+UseG1GC',
       '-XX:+UseZGC',
       '-XX:+ZGenerational',
       '-XX:+UseStringDeduplication',
       '-configuration',
-      -- vim.fn.expand '$MASON/share/jdtls/config/arm',
-      vim.fn.expand '$HOME/.local/share/nvim/jdtls/config_mac_arm/',
+      vim.fn.expand '$MASON/share/jdtls/config/arm',
+      -- vim.fn.expand '$HOME/.local/share/nvim/jdtls/config_mac_arm/',
       '-data',
       jdtls_workspace_dir,
       '--jvm-arg=-Dlog.level=ALL',
@@ -192,6 +192,17 @@ end
 
 -- :shrug:
 function M.on_attach(event)
+  -- NOTE: this overrides mappings that use telescope (and don't really work well with jdtls)
+  -- it's a little less ergonomic but what can you do
+  local map = function(keys, func, desc, mode)
+    mode = mode or 'n'
+    vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = 'LSP: ' .. desc })
+  end
+  map('gO', vim.lsp.buf.document_symbol, 'Open Document Symbols')
+
+  -- Fuzzy find all the symbols in your current workspace.
+  --  Similar to document symbols, except searches over your entire project.
+  map('gW', vim.lsp.buf.workspace_symbol, 'Open Workspace Symbols')
   local client = vim.lsp.get_client_by_id(event.data.client_id)
   if client == nil or client.name ~= 'jdtls' then
     return
@@ -469,6 +480,19 @@ function M.on_attach(event)
       )
     end, bufnr)
   end
+  vim.api.nvim_buf_create_user_command(event.buf, 'JavaUpgradeGradle', function(version)
+    client:exec_cmd(
+      { command = 'java.project.upgradeGradle', arguments = { vim.uri_from_fname(client.root_dir), version.fargs[1] } },
+      {},
+      function(err, res, ctx)
+        if err ~= nil then
+          vim.notify('Error while executing JavaUpgradeGradle: ' .. err.message, vim.log.levels.ERROR, {})
+        else
+          vim.notify('Upgraded gradle version to ' .. version.fargs[1], vim.log.levels.INFO, {})
+        end
+      end
+    )
+  end, { nargs = 1 })
   -- NOTE: could be fun to have like a Java command and a series of subcommands
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaGenerateTest', function()
     client:exec_cmd({
@@ -478,7 +502,7 @@ function M.on_attach(event)
       assert(not err, err)
       assert(res, 'No edit provided')
       vim.lsp.util.apply_workspace_edit(res, 'utf-16')
-    end)
+    end, {})
   end, {})
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
     client:exec_cmd({

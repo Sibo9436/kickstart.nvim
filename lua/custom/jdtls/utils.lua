@@ -200,4 +200,29 @@ function JdtlsClient:get_all_projects()
   return res.result
 end
 
+---Update maven profiles
+---@param profiles string[]
+function JdtlsClient:update_profiles(profiles)
+  local project_uri = vim.uri_from_fname(self._client.root_dir)
+  local res = self._client:request_sync('workspace/executeCommand', {
+    command = 'java.project.updateSettings',
+    arguments = { project_uri, ('{"org.eclipse.m2e.core.selectedProfiles":"%s"}'):format(table.concat(profiles, ',')) },
+  })
+  assert(res, 'Jdtls did not respond')
+  assert(res.err == nil, res.err)
+  return res.result
+end
+--- Get selected profiles
+---@param profiles string[]
+function JdtlsClient:get_selected_profiles()
+  local project_uri = vim.uri_from_fname(self._client.root_dir)
+  local res = self._client:request_sync('workspace/executeCommand', {
+    command = 'java.project.getSettings',
+    arguments = { project_uri, { 'org.eclipse.m2e.core.selectedProfiles' } },
+  })
+  assert(res, 'Jdtls did not respond')
+  assert(res.err == nil, res.err)
+  return res.result
+end
+
 return M

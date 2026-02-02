@@ -559,7 +559,7 @@ require('lazy').setup({
           -- Remap K to hover to add rounded borders
           -- could be done with vim.o.winborder = 'rounded' but that messes up telescope borders
           map('K', function()
-            vim.lsp.buf.hover { border = 'rounded', max_width = 90 }
+            vim.lsp.buf.hover { border = 'rounded', wrap = true, max_width = math.floor(vim.fn.winwidth(0) / 2) }
           end, 'Hover')
           --fix border colors
           vim.api.nvim_set_hl(0, 'NormalFloat', { link = 'FloatBorder' }) -- makes borders match background
@@ -698,6 +698,19 @@ require('lazy').setup({
 
       -- Diagnostic Config
       -- See :help vim.diagnostic.Opts
+      local virtual_text_config = {
+        source = 'if_many',
+        spacing = 2,
+        format = function(diagnostic)
+          local diagnostic_message = {
+            [vim.diagnostic.severity.ERROR] = diagnostic.message,
+            [vim.diagnostic.severity.WARN] = diagnostic.message,
+            [vim.diagnostic.severity.INFO] = diagnostic.message,
+            [vim.diagnostic.severity.HINT] = diagnostic.message,
+          }
+          return diagnostic_message[diagnostic.severity]
+        end,
+      }
       vim.diagnostic.config {
         severity_sort = true,
         float = { border = 'rounded', source = 'if_many' },
@@ -710,20 +723,19 @@ require('lazy').setup({
             [vim.diagnostic.severity.HINT] = '󰌶 ',
           },
         } or {},
-        virtual_text = {
-          source = 'if_many',
-          spacing = 2,
-          format = function(diagnostic)
-            local diagnostic_message = {
-              [vim.diagnostic.severity.ERROR] = diagnostic.message,
-              [vim.diagnostic.severity.WARN] = diagnostic.message,
-              [vim.diagnostic.severity.INFO] = diagnostic.message,
-              [vim.diagnostic.severity.HINT] = diagnostic.message,
-            }
-            return diagnostic_message[diagnostic.severity]
-          end,
-        },
+        virtual_text = virtual_text_config,
       }
+      -- Activate virtual lines
+      local toggle = true
+      vim.keymap.set('n', '<leader>vd', function()
+        if toggle then
+          vim.diagnostic.config { virtual_lines = { current_line = true } }
+          toggle = not toggle
+        else
+          vim.diagnostic.config { virtual_lines = false }
+          toggle = not toggle
+        end
+      end, { desc = 'Virtual diagnostics' })
 
       -- LSP servers and clients are able to communicate to each other what features they support.
       --  By default, Neovim doesn't support everything that is in the LSP specification.
@@ -757,7 +769,7 @@ require('lazy').setup({
         lua_ls = {
           -- cmd = { ... },
           -- filetypes = { ... },
-          -- capabilities = {},
+          capabilities = capabilities,
           settings = {
             Lua = {
               completion = {
@@ -978,12 +990,12 @@ require('lazy').setup({
     lazy = false,
     priority = 1001,
     config = function()
-      vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PMenuSel' })
+      vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PmenuSel' })
       vim.api.nvim_create_autocmd('ColorScheme', {
         group = vim.api.nvim_create_augroup('sibo-colo', { clear = true }),
-        pattern = { 'zenbones', 'nordbones' },
+        pattern = { '*bones' },
         callback = function(ev)
-          vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PMenuSel' })
+          vim.api.nvim_set_hl(0, 'BlinkCmpMenuSelection', { link = 'PmenuSel' })
         end,
       })
     end,
@@ -1168,6 +1180,7 @@ vim.filetype.add {
   },
 }
 
+vim.lsp.enable 'sonarlint'
 require('custom.pr_commenst').setup()
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et

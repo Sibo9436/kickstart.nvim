@@ -44,7 +44,6 @@ local function call_bb_api(url, callback)
     '--header',
     'Accept: application/json',
   }, { text = true }, callback)
-  -- TODO: this needs a big improvement in which I handle pagination and json decoding here!
 end
 
 local function on_curl_complete(context)
@@ -62,7 +61,7 @@ local function on_curl_complete(context)
     ---@type boolean,{next:string, values: pr_comment[]}
     local ok, data = pcall(vim.json.decode, json_string)
 
-    if not ok then
+    if not ok or data == nil then
       vim.schedule(function()
         vim.notify('Failed to parse PR JSON: ' .. tostring(data), vim.log.levels.ERROR)
       end)
@@ -158,7 +157,6 @@ local function resolve_pr_url(cb)
         end)
         return
       end
-      -- FIXME: for now pagination is not handled
       for _, entry in ipairs(data.values) do
         if entry.source.repository.name == repo_slug then
           -- print(vim.inspect(entry))
@@ -173,35 +171,44 @@ local function resolve_pr_url(cb)
   )
 end
 
+local function autocomplete(argLead, cmdLine, cursorPos)
+  return { 'check', 'find ' }
+end
+
 --- Setup your preferred method or retrieving blabla
 ---@param opts any?
 function M.setup(opts)
   opts = opts or {}
+  resolve_pr_url = opts.resolve_pr_url or resolve_pr_url
   M.namespace_id = vim.api.nvim_create_namespace 'pr_comments'
-  vim.api.nvim_create_user_command('PrCheck', function()
-    resolve_pr_url(M.find_bitbucket_pr_comments)
-  end, {})
-  vim.api.nvim_create_user_command('PrUrl', function()
-    vim.ui.input({
-      prompt = 'Enter pr url: ',
-      default = nil,
-    }, function(res)
-      if res == nil then
-        vim.notify('Command requires a pr url (only)', vim.log.levels.ERROR)
-        return
-      end
+  vim.api.nvim_create_user_command('BB', function(args)
+    if args.fargs[1] == 'check' then
+      resolve_pr_url(M.find_bitbucket_pr_comments)
+    elseif args.fargs[1] == 'find' then
+      vim.ui.input({
+        prompt = 'Enter pr url: ',
+        default = nil,
+      }, function(res)
+        if res == nil then
+          vim.notify('Command requires a pr url (only)', vim.log.levels.ERROR)
+          return
+        end
 
-      local url = res
-      -- argument will be like:
-      -- https://bitbucket.org/check24/fin-ga-c24-easyinvest/pull-requests/79
+        local url = res
+        -- argument will be like:
+        -- https://bitbucket.org/check24/fin-ga-c24-easyinvest/pull-requests/79
 
-      local repo_slug, pr_number = url:match '^https?://[^/]+/([^/]+/[^/]+)/pull%-requests/(%d+)'
+        local repo_slug, pr_number = url:match '^https?://[^/]+/([^/]+/[^/]+)/pull%-requests/(%d+)'
 
-      -- print('Repository slug: ' .. (repo_slug or 'nil'))
-      -- print('PR number: ' .. (pr_number or 'nil'))
-      local api_url = 'https://api.bitbucket.org/2.0/repositories/' .. repo_slug .. '/pullrequests/' .. pr_number .. '/comments'
-      M.find_bitbucket_pr_comments(api_url)
-    end)
-  end, {})
+        -- print('Repository slug: ' .. (repo_slug or 'nil'))
+        -- print('PR number: ' .. (pr_number or 'nil'))
+        local api_url = 'https://api.bitbucket.org/2.0/repositories/' .. repo_slug .. '/pullrequests/' .. pr_number .. '/comments'
+        M.find_bitbucket_pr_comments(api_url)
+      end)
+    end
+  end, {
+    nargs = 1,
+    complete = autocomplete,
+  })
 end
 return M

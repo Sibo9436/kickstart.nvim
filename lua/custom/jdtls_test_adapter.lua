@@ -45,33 +45,64 @@ local function convert_range(range)
   return { range.start.line, range.start.character, range['end'].line, range['end'].character }
 end
 
+-- beautiful name
+--- @param test_item JavaTestItem
+--- @param file_path string
+--- @return neotest.Tree[]
+local function convert_child(test_item, file_path)
+  local nodes = {}
+  if test_item.children == nil or #test_item.children == 0 then
+    table.insert(nodes, {
+      type = 'test',
+      path = file_path,
+      name = test_item.label,
+      range = convert_range(test_item.range),
+      custom_data = test_item,
+    })
+  else
+    table.insert(nodes, {
+      type = 'namespace',
+      path = file_path,
+      name = test_item.label,
+      range = convert_range(test_item.range),
+      custom_data = test_item,
+    })
+    for _, child in ipairs(test_item.children) do
+      local ns = convert_child(child, file_path)
+      for _, n in ipairs(ns) do
+        table.insert(nodes, n)
+      end
+    end
+  end
+  return nodes
+end
+
 ---Given a file path, parse all the tests within it.
 ---@async
 ---@param file_path string Absolute file path
 ---@return neotest.Tree | nil
 function M.discover_positions(file_path)
   -- print('called discover positions with ' .. file_path)
-  local test_methods = util.get_client():find_test_methods(file_path)[1]
-  local nodes = {
-    {
+  -- NOTE: should always only be 1 I think
+  local test_files = util.get_client():find_test_methods(file_path)
+  local nodes = {}
+  for _, test_file in ipairs(test_files) do
+    table.insert(nodes, {
       type = 'file',
       path = file_path,
-      name = test_methods.label,
-      range = convert_range(test_methods.range),
-      custom_data = nil,
-    },
-  }
-  for _, child in ipairs(test_methods.children) do
-    table.insert(nodes, {
-      type = 'test',
-      path = file_path,
-      name = child.label,
-      range = convert_range(child.range),
-      custom_data = child,
+      name = test_file.label,
+      range = convert_range(test_file.range),
+      custom_data = test_file,
     })
+    for _, child in ipairs(test_file.children) do
+      local test_nodes = convert_child(child, file_path)
+      for _, node in ipairs(test_nodes) do
+        table.insert(nodes, node)
+      end
+    end
   end
   -- vim.notify(vim.inspect(nodes), vim.log.levels.INFO)
-  return lib.positions.parse_tree(nodes, {})
+  return lib.positions.parse_tree(nodes, { nested_tests = true, require_namespaces = false })
 end
 
 local function resolve_gradle_project_name(projectName)
@@ -113,6 +144,24 @@ local function build_spec(args)
   end
   if data.type == 'file' then
     local classname = string.gsub(data.name, '.java', '')
+    return {
+      command = {
+        args.tree:root():data().path .. '/gradlew',
+        data.custom_data and data.custom_data.projectName and resolve_gradle_project_name(data.custom_data.projectName) .. ':test' or 'test',
+        '--tests',
+        classname,
+      },
+      --@field env? table<string, string>
+      env = {},
+      cwd = vim.fn.getcwd(),
+      --@field context? table Arbitrary data to preserve state between running and result collection
+      context = { name = 'gradle' },
+      --@field strategy? table|neotest.Strategy Arguments for strategy or override for chosen strategy
+      --@field stream? fun(output_stream: fun(): string[]): fun(): table<string, neotest.Result>
+    }
+  end
+  if data.type == 'namespace' then
+    local classname = data.custom_data.fullName
     return {
       command = {
         args.tree:root():data().path .. '/gradlew',
@@ -213,13 +262,13 @@ end
 ---@return nil | neotest.RunSpec | neotest.RunSpec[]
 -- NOTE: this would be glorious
 local function build_spec_dap_junit(args)
-  vim.notify('debugging tests is still not supported', vim.log.levels.ERROR)
   if args.strategy ~= 'dap' then
     vim.notify('launching through java-debug only supported via dap', vim.log.levels.ERROR)
   end
   local tree = args.tree
   local data = tree:data()
   if data.type ~= 'test' then
+    vim.notify('debugging ' .. data.type .. ' is still not supported', vim.log.levels.ERROR)
     return nil
   end
   -- print(vim.inspect(tree:data()))
@@ -251,7 +300,6 @@ local function build_spec_dap_junit(args)
     .. ']'
     .. '}'
 
-  --- TODO: migrate to utils?
   local jdtls_client = util.get_client()
   jdtls_client:build_workspace()
   local result = jdtls_client._client:request_sync('workspace/executeCommand', {

@@ -55,4 +55,5 @@ vim.keymap.set('v', '<leader>el', eval_sel, { desc = '[e]val current se[l]ection
 vim.keymap.set('n', '<leader>ef', eval_file, { desc = '[e]val current [f]ile' })
 vim.o.tabstop = 2
 vim.o.softtabstop = 2
+vim.o.commentstring = '; %s'
 vim.o.sw = 0
