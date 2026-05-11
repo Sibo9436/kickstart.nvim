@@ -12,7 +12,7 @@ function M.config()
   local project_parent = vim.fn.fnamemodify(vim.fn.getcwd(), ':~:h:t')
 
   local jdtls_workspace_dir = vim.fn.expand '$HOME/.cache/jdtls/workspace/' .. project_parent .. '/' .. project_name
-  local mason_share = vim.fn.expand '$MASON/share'
+  local mason_share = vim.fn.stdpath 'data' .. '/mason/share'
   local spring_share = vim.fn.expand '$HOME/.local/share/spring/jdtls-extensions/'
   local test_bundle_names = {
     'com.microsoft.java.test.plugin-',
@@ -168,7 +168,7 @@ function M.config()
       '-XX:+ZGenerational',
       '-XX:+UseStringDeduplication',
       '-configuration',
-      vim.fn.expand '$MASON/share/jdtls/config/arm',
+      mason_share..'/jdtls/config/arm',
       -- vim.fn.expand '$HOME/.local/share/nvim/jdtls/config_mac_arm/',
       '-data',
       jdtls_workspace_dir,
