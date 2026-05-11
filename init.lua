@@ -900,6 +900,11 @@ do
     vim.lsp.config(name, server)
     vim.lsp.enable(name)
   end
+
+  require('mason-lspconfig').setup {
+    ensure_installed = {},
+    automatic_enable = true,
+  }
 end
 
 -- ============================================================
@@ -1105,7 +1110,7 @@ do
   require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
   require 'kickstart.plugins.lint'
-  -- require 'kickstart.plugins.autopairs'
+  require 'kickstart.plugins.autopairs'
   -- require 'kickstart.plugins.neo-tree'
 
   -- NOTE: You can add your own plugins, configuration, etc. in `lua/custom/plugins/*.lua`.
@@ -1140,6 +1145,6 @@ vim.filetype.add {
 }
 
 vim.lsp.enable 'sonarlint'
-require('custom.pr_commenst').setup()
+require('custom.pr_comments').setup()
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
