@@ -1,6 +1,10 @@
--- Custom UI elements that I apparently I had to do for myself
--- Dependis on plenary.nvim (for now???)
+-- Custom UI elements that I apparently had to do for myself
+-- Depends on plenary.nvim (for now???)
 local M = {}
+
+local NS_MAIN = vim.api.nvim_create_namespace 'custom_ui'
+local NS_GUTTER = vim.api.nvim_create_namespace 'custom_ui_gutter'
+local NS_VIRT = vim.api.nvim_create_namespace 'custom_ui_virt'
 
 local highlights = {
   SiboUINormal = { default = true, link = 'Normal' },
@@ -41,7 +45,6 @@ M.select = function(opts, values, cb)
     return false
   end, values)
   vim.api.nvim_buf_set_lines(buf, 0, -1, true, strings)
-  local ns = vim.api.nvim_create_namespace ''
 
   local marks = {}
   vim.api.nvim_set_option_value('buftype', 'nofile', { buf = buf })
@@ -51,14 +54,13 @@ M.select = function(opts, values, cb)
   local width = math.floor(vim.o.columns * 0.35)
   for idx, line in ipairs(strings) do
     -- marks for decoration
-    -- TODO: I guess I should
-    vim.api.nvim_buf_set_extmark(buf, vim.api.nvim_create_namespace 'customuigutter', idx - 1, 0, {
+    vim.api.nvim_buf_set_extmark(buf, NS_GUTTER, idx - 1, 0, {
       virt_text = { { ' ', 'SiboUIGutter' }, { tostring(idx) .. ': ', 'SiboUIGutter' } },
       virt_text_pos = 'inline',
     })
     local sw = vim.fn.strdisplaywidth(line) + 6
     if virts then
-      vim.api.nvim_buf_set_extmark(buf, vim.api.nvim_create_namespace 'customuivirt', idx - 1, -1, {
+      vim.api.nvim_buf_set_extmark(buf, NS_VIRT, idx - 1, -1, {
         virt_text = virts[idx],
         hl_mode = 'combine',
         virt_text_pos = 'eol_right_align',
@@ -96,27 +98,26 @@ M.select = function(opts, values, cb)
       c[1] = line % #strings + 1
     end
     vim.api.nvim_win_set_cursor(0, c)
-    vim.api.nvim_buf_clear_namespace(buf, vim.api.nvim_create_namespace 'customuigutter', line - 1, line)
-    vim.api.nvim_buf_set_extmark(buf, vim.api.nvim_create_namespace 'customuigutter', line - 1, 0, {
+    vim.api.nvim_buf_clear_namespace(buf, NS_GUTTER, line - 1, line)
+    vim.api.nvim_buf_set_extmark(buf, NS_GUTTER, line - 1, 0, {
       virt_text = { { sel[line] and '+' or ' ', 'SiboUIGutter' }, { tostring(line) .. ': ', 'SiboUIGutter' } },
       virt_text_pos = 'inline',
     })
     if sel[line] then
-      marks[line] = vim.api.nvim_buf_set_extmark(buf, ns, line - 1, 0, {
+      marks[line] = vim.api.nvim_buf_set_extmark(buf, NS_MAIN, line - 1, 0, {
         hl_group = 'SiboUISelection',
         hl_eol = true,
         end_line = line,
         end_col = 0,
       })
     else
-      vim.api.nvim_buf_del_extmark(buf, ns, marks[line])
+      vim.api.nvim_buf_del_extmark(buf, NS_MAIN, marks[line])
     end
   end
   local toggle_sel_move_up = function()
     toggle_sel(true)
   end
-  -- oddioo...???
-  -- non molto elegante ma impedisce di chiamare il cb due volte...
+  -- Not elegant, but prevents the callback from being invoked twice.
   local cb_called = false
   local end_sel = function()
     local v = {}
@@ -132,9 +133,9 @@ M.select = function(opts, values, cb)
   vim.api.nvim_create_autocmd('WinLeave', {
     buffer = buf,
     callback = function()
-      -- NOTE: non sono sicuro se chiamare il cb o meno in caso di uscita senza selezione
-      -- pero la logica e' che se poi certo di sincronizzare l'api e non chiamo il cb
-      -- blocco una coroutine per sempre
+      -- NOTE: unsure whether to invoke the cb when leaving without a selection,
+      -- but if the API is meant to be synchronous and we never call the cb,
+      -- we'd leave a coroutine suspended forever.
       if not cb_called then
         cb(nil)
       end

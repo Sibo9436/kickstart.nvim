@@ -29,7 +29,7 @@ end
 ---@param file_path string
 ---@return boolean
 function M.is_test_file(file_path)
-  -- cerco di ridurre il numero di chiamate al lsp
+  -- try to reduce the number of LSP calls
   if string.find(file_path, '.java') == nil then return false end
   return util.get_client():is_test_file(file_path)
 end
@@ -258,34 +258,14 @@ local function build_spec_dap_junit(args)
     vim.notify('debugging ' .. data.type .. ' is still not supported', vim.log.levels.ERROR)
     return nil
   end
-  -- print(vim.inspect(tree:data()))
   local custom_data = tree:data().custom_data
-  -- convert node into argument for junit command whatever
-  local argument = {
+  local arg_json = vim.json.encode {
     projectName = custom_data.projectName,
     testLevel = custom_data.testLevel,
     testKind = custom_data.testKind,
-    -- for now very simple
-    testNames = { custom_data.fullName },
+    -- Server expects the JDT handle here, not the human-readable fullName.
+    testNames = { custom_data.jdtHandler },
   }
-  --wow..
-  local arg_json = '{'
-    .. '"projectName":"'
-    .. custom_data.projectName
-    .. '",'
-    .. '"testLevel":'
-    .. custom_data.testLevel
-    .. ','
-    .. '"testKind":'
-    .. custom_data.testKind
-    .. ','
-    .. '"testNames":'
-    .. '['
-    .. '"'
-    .. custom_data.jdtHandler
-    .. '"'
-    .. ']'
-    .. '}'
 
   local jdtls_client = util.get_client()
   jdtls_client:build_workspace()
@@ -352,7 +332,7 @@ local function find_next_emtpy_line(lines)
   return result
 end
 
--- sarebbe ancora meglio utilizzare il bytecode di gradle ma magari in futuro
+-- Using gradle's bytecode output would be even better — maybe in the future.
 --- Retrieve test results from xml
 --- expects a settings.gradle
 ---
@@ -368,12 +348,9 @@ local function parse_xml_gradle_results(test_full_names)
     builddir = match
   end
   local test_dir = builddir .. '/test-results/test'
-  print(test_dir)
-  for id, fullname in pairs(test_full_names) do
-    fullname, _ = fullname:gsub('#.*', '')
-    print(fullname)
-    local content = lib.xml.parse(lib.files.read(test_dir .. '/TEST-' .. fullname .. '.xml'))
-    print(vim.inspect(content))
+  for _, fullname in pairs(test_full_names) do
+    fullname = (fullname:gsub('#.*', ''))
+    lib.xml.parse(lib.files.read(test_dir .. '/TEST-' .. fullname .. '.xml'))
   end
 end
 
@@ -382,8 +359,8 @@ end
 ---@param filepath string the gradle output file
 ---@param test_names table<testid, string>
 ---@return table<testid, {line: string, status: string, ctx: any}>
--- NOTE: viene fuori che neotest ha una libreria per parsing xml quindi potrebbe essere carino
--- recuperare le info dall'xml di gradle
+-- NOTE: neotest exposes an XML parsing library; it would be nice to read the
+-- gradle XML output through that instead of the text scrape.
 local function parse_gradle_test_result(filepath, test_names, test_full_names)
   -- TODO: Still in wip, now I have to work though
   -- parse_xml_gradle_results(test_full_names)

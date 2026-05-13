@@ -1,47 +1,27 @@
 -- FIXME: Turns out a client:request_sync exists ... :/
--- so I think some of this code could be semplified/fixed
+-- so I think some of this code could be simplified/fixed
 
 -- Logic for setting up jdtls
 local M = {}
 local ui = require 'custom/ui'
+local java_paths = require 'custom.java_paths'
 
--- Load configuration for java language server jdtls
+local cached_config = nil
+
+-- Load configuration for java language server jdtls. Heavy: walks Mason and
+-- spring share directories with `vim.fn.glob`. Cached so it only runs once
+-- per Neovim session.
 function M.config()
+  if cached_config ~= nil then return cached_config end
+
   -- jdtls workspace resolution
   local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ':p:h:t')
   local project_parent = vim.fn.fnamemodify(vim.fn.getcwd(), ':~:h:t')
 
   local jdtls_workspace_dir = vim.fn.expand '$HOME/.cache/jdtls/workspace/' .. project_parent .. '/' .. project_name
-  local mason_share = vim.fn.stdpath 'data' .. '/mason/share'
+  local mason_share = java_paths.mason_share()
   local spring_share = vim.fn.expand '$HOME/.local/share/spring/jdtls-extensions/'
-  local test_bundle_names = {
-    'com.microsoft.java.test.plugin-',
-    'org.eclipse.jdt.junit4.runtime_',
-    'org.eclipse.jdt.junit5.runtime_',
-    'org.eclipse.jdt.junit6.runtime_',
-    'junit-jupiter-api_5',
-    'junit-jupiter-api_6',
-    'junit-jupiter-engine',
-    'junit-jupiter-migrationsupport',
-    'junit-jupiter-params',
-    'junit-vintage-engine',
-    'org.opentest4j',
-    'junit-platform-commons',
-    'junit-platform-engine',
-    'junit-platform-launcher',
-    'junit-platform-runner',
-    'junit-platform-suite-api',
-    'junit-platform-suite-commons',
-    'junit-platform-suite-engine',
-    'org.apiguardian.api',
-    'org.jacoco.core',
-  }
-  local java_test_plugins = vim.tbl_map(function(test_bundle_name)
-    --only return a string, hopefully we're only matching one file
-    -- TODO: I have somehow to fix this
-    return vim.fn.glob(mason_share .. '/java-test/' .. test_bundle_name .. '*.jar', true, false)
-  end, test_bundle_names)
-  java_test_plugins = vim.fn.glob(mason_share .. '/java-test/*.jar', true, true)
+  local java_test_plugins = vim.fn.glob(mason_share .. '/java-test/*.jar', true, true)
   local java_debug_bundles = vim.fn.glob(mason_share .. '/java-debug-adapter/*.jar', true, true)
   local spring_tools_bundles = vim.fn.glob(spring_share .. '*.jar', true, true)
   spring_tools_bundles = vim.tbl_filter(function(bundle)
@@ -63,7 +43,7 @@ function M.config()
     },
   })
   local java = {
-    home = '/opt/homebrew/Cellar/openjdk/24.0.1/libexec/openjdk.jdk/Contents/Home',
+    home = java_paths.jdk_home(),
     inlayHints = { uparameterNames = { enabled = 'literals' } },
     maven = { downloadSources = true },
     eclipse = { downloadSources = true },
@@ -156,7 +136,7 @@ function M.config()
       },
     },
   }
-  return {
+  cached_config = {
     filetypes = { 'java' },
     cmd = {
       'jdtls',
@@ -209,21 +189,11 @@ function M.config()
       java = java,
     },
   }
+  return cached_config
 end
 
 -- :shrug:
 function M.on_attach(event)
-  -- NOTE: this overrides mappings that use telescope (and don't really work well with jdtls)
-  -- it's a little less ergonomic but what can you do
-  local map = function(keys, func, desc, mode)
-    mode = mode or 'n'
-    vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = 'LSP: ' .. desc })
-  end
-  map('gO', vim.lsp.buf.document_symbol, 'Open Document Symbols')
-
-  -- Fuzzy find all the symbols in your current workspace.
-  --  Similar to document symbols, except searches over your entire project.
-  map('gW', vim.lsp.buf.workspace_symbol, 'Open Workspace Symbols')
   local client = vim.lsp.get_client_by_id(event.data.client_id)
   if client == nil or client.name ~= 'jdtls' then return end
   client.commands['java.action.generateToStringPrompt'] = function(cmd, ctx)
@@ -278,7 +248,7 @@ function M.on_attach(event)
       end
     end)
   end, {})
-  -- TODO: bello ma non proprio un prompt per ora
+  -- TODO: it works but it's not really a prompt yet
   client.commands['java.action.generateConstructorsPrompt'] = function(cmd, ctx)
     local bufnr = ctx.bufnr
     local params = cmd.arguments[1] --[[@as table]]
@@ -361,10 +331,7 @@ function M.on_attach(event)
     vim.ui.input({
       prompt = cmd.arguments[1],
       default = cmd.arguments[2],
-    }, function(val)
-      print(val)
-      result = val
-    end)
+    }, function(val) result = val end)
     ---@diagnostic disable-next-line: redundant-return-value
     return result
   end
@@ -385,8 +352,8 @@ function M.on_attach(event)
     end
     local ret
     local result = coroutine.yield(co)
-    -- giuro su dio che questa logica l'ho presa da https://github.com/microsoft/vscode-java-test/blob/main/src/commands/askForOptionCommands.ts#L8
-    -- FA CAGARE
+    -- This branching mirrors the upstream vscode-java-test client logic:
+    -- https://github.com/microsoft/vscode-java-test/blob/main/src/commands/askForOptionCommands.ts#L8
     if result and (result.value or result.label) then
       ret = result.value or result.label
     else
@@ -515,7 +482,6 @@ function M.on_attach(event)
       uri = vim.uri_from_fname(client.root_dir)
     end
     assert(uri, 'Could not create uri')
-    print(uri)
     client:exec_cmd({
       command = 'java.edit.organizeImports',
       arguments = { uri },
