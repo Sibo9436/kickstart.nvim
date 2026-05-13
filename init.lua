@@ -122,7 +122,8 @@ do
   --  Schedule the setting after `UiEnter` because it can increase startup-time.
   --  Remove this option if you want your OS clipboard to remain independent.
   --  See `:help 'clipboard'`
-  vim.schedule(function() vim.o.clipboard = 'unnamedplus' end)
+  -- Intentionally disabled: keep yanks off the system clipboard.
+  -- vim.schedule(function() vim.o.clipboard = 'unnamedplus' end)
 
   -- Enable break indent
   vim.o.breakindent = true
@@ -184,15 +185,6 @@ do
   local virtual_text_config = {
     source = 'if_many',
     spacing = 2,
-    format = function(diagnostic)
-      local msgs = {
-        [vim.diagnostic.severity.ERROR] = diagnostic.message,
-        [vim.diagnostic.severity.WARN] = diagnostic.message,
-        [vim.diagnostic.severity.INFO] = diagnostic.message,
-        [vim.diagnostic.severity.HINT] = diagnostic.message,
-      }
-      return msgs[diagnostic.severity]
-    end,
   }
 
   vim.diagnostic.config {
@@ -455,7 +447,6 @@ do
   -- - sd'   - [S]urround [D]elete [']quotes
   -- - sr)'  - [S]urround [R]eplace [)] [']
   require('mini.surround').setup()
-  require('mini.hipatterns').setup()
 
   -- Simple and easy statusline.
   --  You could remove this setup call if you don't like it,
@@ -779,7 +770,8 @@ do
     -- But for many setups, the LSP (`ts_ls`) will work just fine
     ts_ls = {},
 
-    jdtls = require('custom.jdtls_config').config(),
+    -- jdtls registered lazily on FileType java below — its config walks Mason
+    -- and spring share dirs and we don't want that on every Neovim startup.
 
     stylua = {}, -- Used to format Lua code
 
@@ -836,7 +828,9 @@ do
   -- You can press `g?` for help in this menu.
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
-    -- You can add other tools here that you want Mason to install
+    -- jdtls isn't in `servers` because it's registered lazily, but we still
+    -- want Mason to install/keep it.
+    'jdtls',
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -848,9 +842,15 @@ do
     vim.lsp.enable(name)
   end
 
+  -- jdtls is registered lazily in `after/ftplugin/java.lua` so its glob-heavy
+  -- config only runs once a Java buffer is loaded.
+
+  -- The manual loop above already enables every entry in `servers`.
+  -- mason-lspconfig still needs `setup{}` to register itself, but we leave
+  -- automatic enabling off so the two paths don't fight.
   require('mason-lspconfig').setup {
     ensure_installed = {},
-    automatic_enable = true,
+    automatic_enable = false,
   }
 end
 
@@ -866,7 +866,8 @@ do
     format_on_save = function(bufnr)
       -- You can specify filetypes to autoformat on save here:
       local enabled_filetypes = {
-        -- lua = true,
+        lua = true,
+        java = true,
         -- python = true,
       }
       if enabled_filetypes[vim.bo[bufnr].filetype] then
@@ -987,6 +988,8 @@ do
   -- NOTE: You can also specify a branch or a specific commit
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
+  vim.o.foldlevelstart = 99
+
   -- Ensure basic parsers are installed
   local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
   require('nvim-treesitter').install(parsers)
@@ -1001,8 +1004,8 @@ do
 
     -- Enable treesitter based folds
     -- For more info on folds see `:help folds`
-    -- vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
-    -- vim.wo.foldmethod = 'expr'
+    vim.wo.foldexpr = 'v:lua.vim.treesitter.foldexpr()'
+    vim.wo.foldmethod = 'expr'
 
     -- Check if treesitter indentation is available for this language, and if so enable it
     -- in case there is no indent query, the indentexpr will fallback to the vim's built in one

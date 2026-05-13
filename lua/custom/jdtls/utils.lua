@@ -106,10 +106,7 @@ function JdtlsClient:resolve_main_class(file_path)
     for _, proj in ipairs(all_projects) do
       local p = string.sub(proj, 7)
       local part = string.sub(file_uri, 9, 8 + string.len(p))
-      if p == part then
-        print('resolve main class matched', p)
-        arguments = { proj }
-      end
+      if p == part then arguments = { proj } end
     end
   end
   local res = self._client:request_sync('workspace/executeCommand', { command = 'vscode.java.resolveMainClass', arguments = arguments })

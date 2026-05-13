@@ -1,21 +1,23 @@
 -- Configuration for spring-tools language server
 local M = {}
+local jdtls_utils = require 'custom.jdtls.utils'
 
+-- Find a running jdtls vim.lsp.Client, or nil. Wraps get_client_opt so the
+-- raw client (not the JdtlsClient wrapper) is returned for code that pokes
+-- at internal lsp client fields.
 local function find_jdtls(bufnr)
-  local buf = bufnr or 0
-  local clients = vim.lsp.get_clients { bufnr = buf, name = 'jdtls' }
-  if #clients == 0 then
-    return nil
-  else
-    return clients[1]
-  end
+  local wrapped = jdtls_utils.get_client_opt(bufnr)
+  if not wrapped then return nil end
+  return wrapped._client
 end
 
 function M.config()
   -- TODO: Maybe add it to lspconfig.config
   local capabilities = vim.lsp.protocol.make_client_capabilities()
-  -- TODO: move outside, I've already been bamboozled once
-  capabilities = vim.tbl_deep_extend('keep', capabilities, {
+  -- 'force' so our explicit dynamicRegistration flags actually override the
+  -- defaults from make_client_capabilities (which sets executeCommand without
+  -- dynamicRegistration).
+  capabilities = vim.tbl_deep_extend('force', capabilities, {
     workspace = {
       executeCommand = { dynamicRegistration = true },
       didChangeWorkspaceFolders = { dynamicRegistration = true },
@@ -46,12 +48,11 @@ end
 local function makeStsHandler(jdlts_command, title)
   return function(err, result, ctx)
     vim.notify('called ' .. jdlts_command, vim.log.levels.INFO)
-    local clients = vim.lsp.get_clients { name = 'jdtls' }
-    if #clients == 0 then
+    local jdtls = find_jdtls()
+    if not jdtls then
       vim.notify('No jdtls client running, sts/javadoc failed', vim.log.levels.ERROR)
       return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
     end
-    local jdtls = clients[1]
     local co = coroutine.running()
     jdtls:exec_cmd({
       title = title,
@@ -76,15 +77,11 @@ function M.on_attach(event)
   --  requests/notifications, not client-to-server.)
   client.handlers['sts/addClasspathListener'] = function(err, result, ctx)
     vim.notify(client.name .. ' sts/addClasspathListener', vim.log.levels.INFO, {})
-    local clients = vim.lsp.get_clients {
-      --bufnr = ctx.bufnr,
-      name = 'jdtls',
-    }
-    if #clients == 0 then
+    local jdtls_client = find_jdtls()
+    if not jdtls_client then
       vim.notify('No active jdtls client found, sts needs one running', vim.log.levels.ERROR, {})
       return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
     else
-      local jdtls_client = clients[1]
       jdtls_client:request('workspace/executeCommand', {
         command = 'sts.java.addClasspathListener',
         arguments = { result.callbackCommandId },
@@ -95,12 +92,11 @@ function M.on_attach(event)
   end
   client.handlers['sts/removeClasspathListener'] = function(err, result, ctx)
     --vim.notify('Received sts/removeClasspathListener Command', vim.log.levels.INFO, {})
-    local clients = vim.lsp.get_clients { bufnr = ctx.bufnr, name = 'jdtls' }
-    if #clients == 0 then
+    local jdtls_client = find_jdtls(ctx.bufnr)
+    if not jdtls_client then
       vim.notify('No active jdtls client found, sts needs one running', vim.log.levels.ERROR, {})
       return vim.lsp.rpc.rpc_response_error(vim.lsp.protocol.ErrorCodes.InternalError)
     else
-      local jdtls_client = clients[1]
       jdtls_client:request('workspace/executeCommand', {
         command = 'sts.java.removeClasspathListener',
         arguments = { result.callbackCommandId },

@@ -80,7 +80,6 @@ neotest.setup {
                 return item
               end,
             })
-            print('pick', pick)
             return string.match(pick, '(.-/[^/]+/)package.json')
           elseif #pjson == 1 then
             found = string.match(pjson[1], '(.-/[^/]+/)package.json')

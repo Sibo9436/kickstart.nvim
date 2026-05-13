@@ -1,4 +1,5 @@
 -- TODO: Maybe add it to lspconfig.config
+local java_paths = require 'custom.java_paths'
 local project_name = vim.fn.fnamemodify(vim.fn.getcwd(), ':p:h:t')
 local capabilities = vim.lsp.protocol.make_client_capabilities()
 -- TODO: move outside, I've already been bamboozled once
@@ -6,7 +7,7 @@ capabilities = vim.tbl_deep_extend('force', capabilities, require('blink.cmp').g
 ---@type vim.lsp.Config
 local sonarlint = {
   cmd = {
-    '/Users/andrea.sibona/Library/Java/JavaVirtualMachines/corretto-21.0.8/Contents/Home/bin/java',
+    java_paths.java21_executable(),
     '-jar',
     vim.fn.expand '$MASON/packages/sonarlint-language-server/extension/server/sonarlint-ls.jar',
     -- Ensure that sonarlint-language-server uses stdio channel
