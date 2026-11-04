@@ -56,3 +56,23 @@ vim.o.tabstop = 2
 vim.o.softtabstop = 2
 vim.o.commentstring = '; %s'
 vim.o.sw = 0
+
+-- Treesitter: nvim-treesitter doesn't ship a crisp parser, so register it from
+-- the local grammar checkout and build it the first time a crisp buffer opens.
+-- Afterwards the generic FileType handler in init.lua finds the installed
+-- parser on its own; the registration here only matters for (re)installing.
+vim.api.nvim_create_autocmd('User', {
+  pattern = 'TSUpdate',
+  group = vim.api.nvim_create_augroup('crisp-treesitter', { clear = true }),
+  callback = function()
+    require('nvim-treesitter.parsers').crisp = {
+      install_info = { path = '~/personal/git/tree-sitter-crisp' },
+    }
+  end,
+})
+if not vim.list_contains(require('nvim-treesitter').get_installed 'parsers', 'crisp') then
+  local buf = vim.api.nvim_get_current_buf()
+  require('nvim-treesitter').install('crisp'):await(function()
+    if vim.api.nvim_buf_is_valid(buf) then vim.treesitter.start(buf, 'crisp') end
+  end)
+end
