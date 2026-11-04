@@ -1,6 +1,5 @@
 vim.pack.add {
   'https://github.com/stevearc/oil.nvim',
-  'https://github.com/nvim-tree/nvim-web-devicons',
   'https://github.com/benomahony/oil-git.nvim',
   'https://github.com/JezerM/oil-lsp-diagnostics.nvim',
 }
