@@ -41,9 +41,7 @@ function M.get_client_opt(bufnr)
       name = 'jdtls',
     }
   end
-  if not clients or #clients == 0 then
-    return nil
-  end
+  if not clients or #clients == 0 then return nil end
   assert(clients, 'No jdtls client found')
   assert(#clients > 0, 'No jdtls client found')
   return JdtlsClient:new(clients[1])
@@ -67,13 +65,14 @@ function M.get_client(bufnr)
   return JdtlsClient:new(clients[1])
 end
 
---- Resolves main classes
----@return {main_class: string, project_name: string}[]
-function JdtlsClient:resolve_main_classes()
-  local res = self:request_sync('workspace/executeCommand', { command = 'vscode.java.resolveMainClass', arguments = {} })
-  assert(res, 'Jdtls did not respond')
-  assert(res.result, res.err)
-  assert(res.result[1], 'No main class found')
+--- Resolves main classes, returning nil instead of erroring when jdtls has not
+--- finished importing the project yet (or the project simply has no main class).
+--- Use this on hot paths that may run before the server is ready.
+---@param timeout_ms? integer defaults to the lsp client default (1s)
+---@return {main_class: string, project_name: string}[]|nil
+function JdtlsClient:resolve_main_classes_opt(timeout_ms)
+  local res = self:request_sync('workspace/executeCommand', { command = 'vscode.java.resolveMainClass', arguments = {} }, timeout_ms)
+  if not res or res.err or not res.result or not res.result[1] then return nil end
   return vim.tbl_map(function(mc)
     return {
       main_class = mc.mainClass,
@@ -82,14 +81,20 @@ function JdtlsClient:resolve_main_classes()
   end, res.result)
 end
 
+--- Resolves main classes
+---@return {main_class: string, project_name: string}[]
+function JdtlsClient:resolve_main_classes()
+  local main_classes = self:resolve_main_classes_opt()
+  assert(main_classes, 'No main class found')
+  return main_classes
+end
+
 --- Exposes interal request_sync
 ---@param method string
 ---@param params table
 ---@param timeout_ms integer?
 ---@param bufnr integer?
-function JdtlsClient:request_sync(method, params, timeout_ms, bufnr)
-  return self._client:request_sync(method, params, timeout_ms, bufnr)
-end
+function JdtlsClient:request_sync(method, params, timeout_ms, bufnr) return self._client:request_sync(method, params, timeout_ms, bufnr) end
 
 --- Resolves current main class and project name
 --- @param file_path string?
@@ -134,18 +139,23 @@ function JdtlsClient:resolve_java_classpath(project)
   return res.result
 end
 
---- Sync rebuild
-function JdtlsClient:build_workspace_sync()
-  local mc = self:resolve_main_class()
+--- Sync rebuild. `autobuild` is off in our jdtls settings, so callers that need
+--- an up to date classpath (the debug adapter) must wait for this to finish —
+--- hence the generous default timeout, the 1s lsp default expires mid-build.
+---@param project? {main_class: string, project_name:string} resolved on demand when omitted
+---@param timeout_ms? integer defaults to 2 minutes
+function JdtlsClient:build_workspace_sync(project, timeout_ms)
+  local mc = project or self:resolve_main_class()
   self._client:request_sync('workspace/executeCommand', {
     title = 'Build Workspace',
     command = 'vscode.java.buildWorkspace',
     arguments = { ('{"mainClass":"%s", "projectName":"%s"}'):format(mc.main_class, mc.project_name) },
-  })
+  }, timeout_ms or 120000)
 end
 --- Fire and forget workspace rebuild
-function JdtlsClient:build_workspace()
-  local mc = self:resolve_main_class()
+---@param project? {main_class: string, project_name:string} resolved on demand when omitted
+function JdtlsClient:build_workspace(project)
+  local mc = project or self:resolve_main_class()
   self._client:exec_cmd {
     title = 'Build Workspace',
     command = 'vscode.java.buildWorkspace',
@@ -163,9 +173,7 @@ function JdtlsClient:is_test_file(file_path)
   })
   assert(not t_err, 'Request timed out')
   assert(result, 'No response given')
-  if result.err ~= nil then
-    return false
-  end
+  if result.err ~= nil then return false end
   return result.result
 end
 
@@ -207,6 +215,30 @@ function JdtlsClient:resolve_java_executable(mc)
   assert(res, 'Jdtls did not respond')
   assert(res.err == nil, res.err)
   return res.result
+end
+
+--- Asks jdtls (via the java-debug bundle) to spin up a debug server and returns
+--- the port it listens on. nil when the bundle is missing or the request failed.
+---@return integer|nil
+function JdtlsClient:start_debug_session()
+  local res = self._client:request_sync('workspace/executeCommand', { command = 'vscode.java.startDebugSession' })
+  if not res then
+    vim.notify('Jdtls did not respond to vscode.java.startDebugSession', vim.log.levels.ERROR)
+    return nil
+  end
+  if res.err then
+    vim.notify('Could not start the java debug session: ' .. vim.inspect(res.err), vim.log.levels.ERROR)
+    return nil
+  end
+  return res.result
+end
+
+--- Root directory of the first workspace folder, used as the debuggee cwd.
+---@return string|nil
+function JdtlsClient:workspace_dir()
+  local folders = self._client.workspace_folders
+  if folders and folders[1] then return folders[1].name end
+  return self._client.root_dir
 end
 
 ---Get all java projects in workspace

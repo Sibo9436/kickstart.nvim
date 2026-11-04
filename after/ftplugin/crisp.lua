@@ -1,6 +1,4 @@
-local eval_file = function()
-  local filename = vim.fn.expand '%'
-end
+local eval_file = function() local filename = vim.fn.expand '%' end
 local eval_line = function()
   vim.system({
     vim.fn.expand '~/personal/git/crisp/crisp',
@@ -50,6 +48,7 @@ local eval_sel = function()
     end)
   end)
 end
+
 vim.keymap.set('n', '<leader>el', eval_line, { desc = '[e]val current [l]ine' })
 vim.keymap.set('v', '<leader>el', eval_sel, { desc = '[e]val current se[l]ection' })
 vim.keymap.set('n', '<leader>ef', eval_file, { desc = '[e]val current [f]ile' })

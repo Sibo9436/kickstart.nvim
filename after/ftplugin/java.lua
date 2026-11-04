@@ -5,3 +5,5 @@ if vim.g._jdtls_registered then return end
 vim.g._jdtls_registered = true
 vim.lsp.config('jdtls', require('custom.jdtls_config').config())
 vim.lsp.enable 'jdtls'
+vim.o.shiftwidth = 4
+vim.o.expandtab = true

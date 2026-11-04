@@ -209,9 +209,7 @@ do
     virtual_text = virtual_text_config,
     virtual_lines = false,
     jump = {
-      on_jump = function(_, bufnr)
-        vim.diagnostic.open_float { bufnr = bufnr, scope = 'cursor', focus = false }
-      end,
+      on_jump = function(_, bufnr) vim.diagnostic.open_float { bufnr = bufnr, scope = 'cursor', focus = false } end,
     },
   }
 
@@ -332,7 +330,7 @@ do
         vim.cmd 'TSUpdate'
         return
       end
-    end
+    end,
   })
 end
 
@@ -775,25 +773,7 @@ do
       end
 
       if client and client_supports_method(client, vim.lsp.protocol.Methods.textDocument_codeLens) then
-        local codelens_active = false
-        local create_codelens_autocmd = function()
-          vim.api.nvim_create_autocmd({ 'InsertLeave', 'BufEnter' }, {
-            group = vim.api.nvim_create_augroup('kickstart-lsp-codelens', { clear = false }),
-            callback = function() vim.lsp.codelens.refresh { bufnr = 0 } end,
-          })
-        end
-        local toggle = function()
-          if codelens_active then
-            vim.lsp.codelens.clear()
-            vim.api.nvim_clear_autocmds { group = 'kickstart-lsp-codelens' }
-            codelens_active = false
-          else
-            create_codelens_autocmd()
-            vim.lsp.codelens.refresh { bufnr = 0 }
-            codelens_active = true
-          end
-        end
-        map('<leader>tl', toggle, '[T]oggle Code [L]enses')
+        map('<leader>tl', function() vim.lsp.codelens.enable(not vim.lsp.codelens.is_enabled(), nil) end, '[T]oggle Code [L]enses')
       end
 
       require('custom.jdtls_config').on_attach(event)
@@ -890,10 +870,10 @@ do
 
   require('custom.spring_tools').config()
 
-  for name, server in pairs(servers) do
-    vim.lsp.config(name, server)
-    vim.lsp.enable(name)
-  end
+  -- for name, server in pairs(servers) do
+  --   vim.lsp.config(name, server)
+  --   vim.lsp.enable(name)
+  -- end
 
   -- jdtls is registered lazily in `after/ftplugin/java.lua` so its glob-heavy
   -- config only runs once a Java buffer is loaded.
@@ -903,7 +883,7 @@ do
   -- automatic enabling off so the two paths don't fight.
   require('mason-lspconfig').setup {
     ensure_installed = {},
-    automatic_enable = false,
+    automatic_enable = true,
   }
 end
 

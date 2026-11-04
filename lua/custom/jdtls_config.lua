@@ -148,7 +148,7 @@ function M.config()
       '-XX:+ZGenerational',
       '-XX:+UseStringDeduplication',
       '-configuration',
-      mason_share..'/jdtls/config/arm',
+      mason_share .. '/jdtls/config/arm',
       -- vim.fn.expand '$HOME/.local/share/nvim/jdtls/config_mac_arm/',
       '-data',
       jdtls_workspace_dir,
@@ -449,9 +449,22 @@ function M.on_attach(event)
     }, {}, function(err, res, ctx)
       assert(not err, err)
       assert(res, 'No edit provided')
-      vim.lsp.util.apply_workspace_edit(res, 'utf-16')
+      local edit = res --[[@as lsp.WorkspaceEdit]]
+      vim.lsp.util.apply_workspace_edit(edit, 'utf-16')
+      local entries = edit.changes
+      if entries then
+        local next, t, n = pairs(entries)
+        local first_file = next(t)
+        if first_file then vim.cmd('edit ' .. vim.fn.fnameescape(first_file)) end
+      end
+      local changes = edit.documentChanges
+      if changes and changes[1].kind == 'create' then
+        local create_file = changes[1] --[[@as lsp.CreateFile]]
+        vim.cmd('edit ' .. vim.uri_to_fname(create_file.uri))
+      end
     end, {})
   end, {})
+
   vim.api.nvim_buf_create_user_command(event.buf, 'JavaJumpToMain', function()
     client:exec_cmd({
       command = 'vscode.java.resolveMainClass',

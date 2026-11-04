@@ -4,7 +4,7 @@
 ((list . (expr(op )@function.call ) . (expr)*))
 
 ((ident) @function.builtin
-	(#any-of?  @function.builtin "define" "lambda""begin" "quote""if" ))
+	(#any-of?  @function.builtin "define" "lambda" "macro" "begin" "quote""if" ))
 ((op) @operator
 	(#any-of?  @operator "=" "+" "-" "/" "*"))
 (list (expr(op(ident) @name)) 
